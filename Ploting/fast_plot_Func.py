@@ -26,10 +26,11 @@ def show_fig(func):
                 save_file_: str = None,
                 save_format: str = 'png',
                 legend_loc: str = 'best',
+                ncol: int = 1,
                 **kwargs):
         ax = func(*args, **kwargs)
         if kwargs.get('label') is not None:
-            ax.legend(loc=legend_loc, ncol=2)
+            ax.legend(loc=legend_loc, ncol=ncol)
         plt.title(title)
         plt.xlabel(x_label)
         plt.ylabel(y_label)
