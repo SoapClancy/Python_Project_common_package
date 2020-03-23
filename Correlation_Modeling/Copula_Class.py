@@ -13,7 +13,6 @@ from Ploting.fast_plot_Func import scatter, hist, series, scatter_density
 from python_project_common_path_Var import python_project_common_path_
 from Data_Preprocessing.float_precision_control_Func import limit_ndarray_max_and_min
 from Data_Preprocessing import float_eps
-from copulae import EmpiricalCopula
 from UnivariateAnalysis_Class import UnivariatePDFOrCDFLike
 import copy
 from abc import ABCMeta, abstractmethod
@@ -289,36 +288,6 @@ class BivariateCopula(Copula):
 
     def simulate(self, n: int):
         super().simulate(n)
-
-
-class EmpiricalCopulaEx(Copula):
-    __slots__ = ('ecopula',)
-
-    def __init__(self, *, ndarray_data: ndarray = None,
-                 marginal_distribution: Tuple[GaussianMixture, ...] = None,
-                 marginal_distribution_file_: str = None,
-                 ecopula: EmpiricalCopula = None):
-        super().__init__(ndarray_data, marginal_distribution=marginal_distribution,
-                         marginal_distribution_file_=marginal_distribution_file_)
-        if ecopula is None:
-            if ndarray_data is None:
-                raise Exception("Should specify 'ndarray_data' to estimate the ecopula")
-            ecopula = self.__estimate_ecopula()
-        self.ecopula = ecopula
-
-    def __estimate_ecopula(self) -> EmpiricalCopula:
-        ecopula = EmpiricalCopula(data=self.ndarray_data_in_uniform, smoothing='beta')
-        return ecopula
-
-    def cal_copula_pdf(self, *, ndarray_data_like: ndarray = None, ndarray_data_like_in_uniform: ndarray = None,
-                       use_ndarray_data: bool = False, use_ndarray_data_in_uniform: bool = False):
-        pass
-
-    def cal_copula_cdf(self, *, ndarray_data_like: ndarray = None, ndarray_data_like_in_uniform: ndarray = None):
-        return self.ecopula.cdf(ndarray_data_like)
-
-    def simulate(self, n: int):
-        pass
 
 
 class GMCM(BivariateCopula):
