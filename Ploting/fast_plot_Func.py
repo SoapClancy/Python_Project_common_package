@@ -4,6 +4,8 @@ import numpy as np
 from scipy.stats import gaussian_kde
 from matplotlib import cm
 from typing import Union
+import datetime
+import matplotlib.dates as mdates
 
 
 def creat_fig(size: tuple, ax=None):
@@ -80,15 +82,6 @@ def scatter_density(x: ndarray, y: ndarray, ax=None, **kwargs):
 
 
 @show_fig
-def time_series(x: ndarray, y: ndarray, ax=None, **kwargs):
-    @creat_fig((10, 2.4), ax)
-    def plot(ax_):
-        return ax_.plot(x, y, **kwargs)
-
-    return plot
-
-
-@show_fig
 def series(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5 * 0.618), **kwargs):
     @creat_fig(figure_size, ax)
     def plot(ax_):
@@ -100,6 +93,18 @@ def series(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5,
             return ax_.plot(x, y, **kwargs)
 
     return plot
+
+
+def time_series(x_axis_format=None, tz=None, **kwargs):
+    if not isinstance(kwargs['x'][0], datetime.datetime):
+        raise Exception("time series的x值必须是datetime.datetime对象")
+
+    x_lim = (kwargs['x'][0] - datetime.timedelta(seconds=1),
+             kwargs['x'][-1] + datetime.timedelta(seconds=1))
+    ax = series(figure_size=(10, 2.4), x_lim=x_lim, **kwargs)
+    if x_axis_format:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter(x_axis_format, tz=tz))
+    return ax
 
 
 @show_fig

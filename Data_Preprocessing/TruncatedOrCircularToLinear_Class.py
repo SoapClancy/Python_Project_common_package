@@ -25,16 +25,6 @@ class TruncatedToLinear:
         return (np.exp(y) * self.upper_boundary + self.lower_boundary) / (1 + np.exp(y))
 
 
-class CircularToTruncated:
-    __slots__ = ('period',)
-
-    def __init__(self, period: Union[float, int]):
-        self.period = period
-
-    def transform(self, x: ndarray):
-        return np.sin(2 * np.pi * x / self.period) + np.cos(2 * np.pi * x / self.period)
-
-
 class CircularToLinear:
     __slots__ = ('lower_boundary', 'upper_boundary', 'period')
 
@@ -44,6 +34,4 @@ class CircularToLinear:
         self.period = period
 
     def transform(self, x: ndarray):
-        step1 = CircularToTruncated(self.period).transform(x)
-        step2 = TruncatedToLinear(self.lower_boundary, self.upper_boundary).transform(step1)
-        return step2
+        return np.cos(2 * np.pi * x / self.period), np.sin(2 * np.pi * x / self.period)
