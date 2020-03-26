@@ -59,7 +59,12 @@ def scatter(x: Union[ndarray, range], y: ndarray, ax=None, figure_size=(5, 5 * 0
     def plot(ax_):
         # c = kwargs.pop('c') if 'c' in kwargs else 'b'
         s = kwargs.pop('s') if 's' in kwargs else 2
-        return ax_.scatter(x, y, s=s, rasterized=rasterized, **kwargs)
+        color_bar_name = kwargs.pop('color_bar_name') if 'color_bar_name' in kwargs else False
+        fig = ax_.scatter(x, y, s=s, rasterized=rasterized, **kwargs)
+        if color_bar_name:
+            cb = plt.colorbar(fig)
+            cb.set_label(color_bar_name)
+        return fig
 
     return plot
 
