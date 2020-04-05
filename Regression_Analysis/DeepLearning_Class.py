@@ -19,43 +19,7 @@ from python_project_common_path_Var import python_project_common_path_
 from typing import Tuple
 import random
 import copy
-
-
-def datetime_one_hot_encoder(datetime_, *, including_year=True,
-                             including_month=True,
-                             including_day=True,
-                             including_weekday=True,
-                             including_hour=True,
-                             including_minute=True, **kwargs) -> ndarray:
-    datetime_ = datetime64_ndarray_to_datetime_tuple(datetime_)
-    # 从datetime.datetime中提取各种属性，编码方式：年，月，日，星期，小时，分钟
-    datetime_iterator = np.full((datetime_.__len__(), 6), np.nan)
-    for i, this_datetime_ in enumerate(datetime_):
-        datetime_iterator[i, 0] = this_datetime_.year if including_year else -1
-        datetime_iterator[i, 1] = this_datetime_.month if including_month else -1
-        datetime_iterator[i, 2] = this_datetime_.day if including_day else -1
-        datetime_iterator[i, 3] = this_datetime_.weekday() if including_weekday else -1
-        datetime_iterator[i, 4] = this_datetime_.hour if including_hour else -1
-        datetime_iterator[i, 5] = this_datetime_.minute if including_minute else -1
-    # 删除无效行
-    del_col = datetime_iterator[-1, :] == -1
-    datetime_iterator = datetime_iterator[:, ~del_col]
-    datetime_iterator = datetime_iterator.astype('int')
-    # 每个col提取unique值并排序
-    col_sorted_unique = []
-    for col in range(datetime_iterator.shape[1]):
-        col_sorted_unique.append(sorted(np.unique(datetime_iterator[:, col]), reverse=True))
-    # one hot 编码
-    one_hot_dims = [len(this_col_sorted_unique) for this_col_sorted_unique in col_sorted_unique]
-    one_hot_results = np.full((datetime_.__len__(), sum(one_hot_dims)), 0)
-    for i, this_datetime_iterator in enumerate(datetime_iterator):
-        for j in range(one_hot_dims.__len__()):
-            encoding_idx = np.where(this_datetime_iterator[j] == col_sorted_unique[j])[0]
-            if j == 0:
-                one_hot_results[i, encoding_idx] = 1
-            else:
-                one_hot_results[i, sum(one_hot_dims[:j]) + encoding_idx] = 1
-    return one_hot_results
+from Time_Processing.datetime_utils import datetime_one_hot_encoder
 
 
 def use_min_max_scaler_and_save(data_to_be_normalised: ndarray, file_: str, **kwargs):
@@ -156,6 +120,14 @@ def prepare_data_for_nn(*, datetime_: ndarray = None, x: ndarray, y: ndarray,
     x_validation = x_train_validation[~training_mask, :]
     y_validation = y_train_validation[~training_mask, :]
     return x_train, y_train, x_validation, y_validation
+
+
+class BayesCOVN1DLSTM:
+    pass
+
+
+class SimpleLSTM:
+    pass
 
 
 class MatlabLSTM:
