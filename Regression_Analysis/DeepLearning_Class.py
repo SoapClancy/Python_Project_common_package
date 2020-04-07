@@ -20,6 +20,9 @@ from typing import Tuple
 import random
 import copy
 from Time_Processing.datetime_utils import datetime_one_hot_encoder
+import torch
+from torch import nn
+from torch.autograd import Variable
 
 
 def use_min_max_scaler_and_save(data_to_be_normalised: ndarray, file_: str, **kwargs):
@@ -126,8 +129,28 @@ class BayesCOVN1DLSTM:
     pass
 
 
-class SimpleLSTM:
-    pass
+class SimpleLSTM(nn.Module):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int):
+        super().__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+
+        self.lstm_layer = nn.LSTM(input_size, hidden_size, num_layers=1, batch_first=True)
+        self.linear_layer = nn.Linear(hidden_size, output_size)
+        self.cuda()
+
+    def forward(self, x):
+        # 这里r_out shape永远是(seq, batch, output_size)，与网络的batch_first参数无关
+        r_out, (h_n, h_c) = self.lstm_layer(x, None)
+        # 如果网络的batch_first = True，这里out的shape就是(batch, seq, output_size)
+        # 否则，这里out的shape就是(seq, batch, output_size)
+        out = self.linear_layer(r_out)
+        return out
+
+    def init_hidden(self, x):
+        h_0 = torch.zeros(1, x.size[1], self.hidden_size, device='cuda:0')
+        c_0 = torch.zeros(1, x.size[1], self.hidden_size, device='cuda:0')
+        return h_0, c_0
 
 
 class MatlabLSTM:
