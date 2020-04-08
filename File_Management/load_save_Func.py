@@ -33,21 +33,21 @@ def load_exist_npy_file_otherwise_run_and_save(file_):
     return wrapper
 
 
-def save_pkl_file(file_, obj):
+def save_pkl_file(file_path, obj):
     try:
-        with open(file_, 'wb') as f:
+        with open(file_path, 'wb') as f:
             pickle.dump(obj, f)
     except FileNotFoundError:
-        file_ = re.sub('/', '//', file_)
-        with open(file_, 'wb') as f:
+        file_path = re.sub('/', '//', file_path)
+        with open(file_path, 'wb') as f:
             pickle.dump(obj, f)
 
 
-def load_pkl_file(file_):
-    if try_to_find_file(file_) is False:
+def load_pkl_file(file_path):
+    if try_to_find_file(file_path) is False:
         return None
     else:
-        with open(file_, "rb") as f:
+        with open(file_path, "rb") as f:
             return pickle.load(f)
 
 

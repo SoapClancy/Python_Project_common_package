@@ -9,13 +9,14 @@ from datetime import datetime
 import copy
 from datetime import date
 
+
 def get_holiday_from_datetime64_ndarray(_datetime: Iterable[np.datetime64]):
     """
     返回0表示不是holiday，返回1表示是holiday
     """
-    _datetime = datetime64_ndarray_to_datetime_tuple(_datetime)
-    tt = 1
-    return
+    raise Exception('Not implemented yet')
+    # _datetime = datetime64_ndarray_to_datetime_tuple(_datetime)
+    # return
 
 
 def datetime_one_hot_encoder(_datetime: Iterable[np.datetime64], *,
@@ -102,34 +103,32 @@ class DatetimeOnehotEncoder:
         encoding_df = pd.DataFrame(columns=pd.MultiIndex.from_tuples(columns))
         return encoding_df
 
-    def __call__(self, datetime_like: Union[datetime,
-                                            Iterable[datetime],
-                                            np.datetime64,
-                                            Iterable[np.datetime64]],
+    def __call__(self, datetime_like: pd.DatetimeIndex,
                  tz=None,
                  country=None) -> DataFrame:
         """
         输入typing中指定格式的包含datetime信息的对象，返回包含one hot encoder结果的DataFrame
         所有的输入会被转成Tuple[datetime,...]然后loop
         """
-        encoding_df = copy.deepcopy(self.encoding_df_template)
-        if isinstance(datetime_like, datetime):
-            datetime_tuple = tuple([datetime_like])
-        elif isinstance(datetime_like, np.datetime64):
-            datetime_tuple = datetime64_ndarray_to_datetime_tuple(np.array([datetime_like]), tz)
-        elif isinstance(datetime_like[0], np.datetime64):
-            datetime_tuple = datetime64_ndarray_to_datetime_tuple(datetime_like, tz)
-        else:
-            datetime_tuple = tuple(datetime_like)
-        for i, this_datetime in enumerate(datetime_tuple):
-            for this_datetime_dim in encoding_df.columns.levels[0]:
-                if this_datetime_dim != 'weekday':
-                    if this_datetime_dim != 'holiday':
-                        encoding_df.loc[i, (this_datetime_dim, this_datetime.__getattribute__(this_datetime_dim))] = 1
-                    else:
-                        idx = 1 if country.is_holiday(this_datetime) else 0
-                        encoding_df.loc[i, (this_datetime_dim, idx)] = 1
+        # 直接生成完整表单
+        encoding_df = pd.DataFrame(np.full((datetime_like.shape[0], self.encoding_df_template.shape[1]), np.nan),
+                                   columns=self.encoding_df_template.columns)
+        # 把索引算出来
+        required_dim_index = dict()
+        for this_datetime_dim in encoding_df.columns.levels[0]:
+            if this_datetime_dim != 'weekday':
+                if this_datetime_dim != 'holiday':
+                    required_dim_index.setdefault(this_datetime_dim, datetime_like.__getattribute__(this_datetime_dim))
                 else:
-                    encoding_df.loc[i, (this_datetime_dim, this_datetime.isoweekday())] = 1
+                    holiday_results = np.array(list(map(lambda x: country.is_holiday(x), datetime_like)))
+                    holiday_results = holiday_results.astype(int)
+                    required_dim_index.setdefault(this_datetime_dim, holiday_results)
+            else:
+                required_dim_index.setdefault(this_datetime_dim, datetime_like.__getattribute__(this_datetime_dim) + 1)
+        # 开始写入pd.DataFrame，此代码效率非常慢，TODO：如何才能给给多层索引用Boolean向量化编程？
+        for i in range(encoding_df.shape[0]):
+            for key, item in required_dim_index.items():
+                encoding_df.loc[i, (key, item[i])] = 1
         encoding_df.fillna(value=0, inplace=True)
+        encoding_df = encoding_df.astype(int)
         return encoding_df

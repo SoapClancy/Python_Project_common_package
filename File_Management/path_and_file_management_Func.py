@@ -5,11 +5,13 @@ from typing import Iterable, Tuple
 from functools import singledispatch
 
 
-def try_to_find_file(file_):
+def try_to_find_file(file_path):
     """
     寻找结果文件。有的话就返回True，如果没有的话则返回False
     """
-    return os.path.isfile(file_)
+    if file_path is None:
+        return None
+    return os.path.isfile(file_path)
 
 
 def try_to_find_file_if_exist_then_delete(file_):
