@@ -110,12 +110,11 @@ class DatetimeOnehotEncoder:
         输入typing中指定格式的包含datetime信息的对象，返回包含one hot encoder结果的DataFrame
         所有的输入会被转成Tuple[datetime,...]然后loop
         """
-        # 直接生成完整表单
-        encoding_df = pd.DataFrame(np.full((datetime_like.shape[0], self.encoding_df_template.shape[1]), np.nan),
-                                   columns=self.encoding_df_template.columns)
+        # 初始化numpy数据
+        encoding_df = np.full((datetime_like.shape[0], self.encoding_df_template.shape[1]), 0, dtype=int)
         # 把索引算出来
         required_dim_index = dict()
-        for this_datetime_dim in encoding_df.columns.levels[0]:
+        for this_datetime_dim in self.encoding_df_template.columns.levels[0]:
             if this_datetime_dim != 'weekday':
                 if this_datetime_dim != 'holiday':
                     required_dim_index.setdefault(this_datetime_dim, datetime_like.__getattribute__(this_datetime_dim))
@@ -125,10 +124,11 @@ class DatetimeOnehotEncoder:
                     required_dim_index.setdefault(this_datetime_dim, holiday_results)
             else:
                 required_dim_index.setdefault(this_datetime_dim, datetime_like.__getattribute__(this_datetime_dim) + 1)
-        # 开始写入pd.DataFrame，此代码效率非常慢，TODO：如何才能给给多层索引用Boolean向量化编程？
-        for i in range(encoding_df.shape[0]):
-            for key, item in required_dim_index.items():
-                encoding_df.loc[i, (key, item[i])] = 1
-        encoding_df.fillna(value=0, inplace=True)
-        encoding_df = encoding_df.astype(int)
+        # 写入encoding_df
+        for i, this_dim_name in enumerate(self.encoding_df_template.columns):
+            # 取得这一列对应的boolean数组并转成int
+            this_dim = np.array(required_dim_index[this_dim_name[0]] == this_dim_name[1], dtype=int)  # type: ndarray
+            encoding_df[:, i] = this_dim
+        # 写入pd.DataFrame
+        encoding_df = pd.DataFrame(encoding_df, columns=self.encoding_df_template.columns)
         return encoding_df
