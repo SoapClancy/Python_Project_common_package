@@ -56,17 +56,25 @@ class FFTProcessor:
 
     def single_sided_period_axis(self, transform_to: str = 'second') -> ndarray:
         if self.length_of_signal % 2 == 0:
-            if transform_to == 'hour':
-                return (1 / self.single_sided_frequency_axis) / 3600
-            elif transform_to == 'minute':
+            if transform_to == 'minute':
                 return (1 / self.single_sided_frequency_axis) / 60
+            elif transform_to == 'hour':
+                return (1 / self.single_sided_frequency_axis) / (60 * 60)
+            elif transform_to == 'half day, i.e., 12 hours':
+                return (1 / self.single_sided_frequency_axis) / (60 * 60 * 12)
             elif transform_to == 'day':
                 return (1 / self.single_sided_frequency_axis) / (60 * 60 * 24)
             elif transform_to == 'week':
                 return (1 / self.single_sided_frequency_axis) / (60 * 60 * 24 * 7)
             elif transform_to == '28 days':
                 return (1 / self.single_sided_frequency_axis) / (60 * 60 * 24 * 28)
-            elif transform_to == 'year':
+            elif transform_to == '1/12 year':
+                return (1 / self.single_sided_frequency_axis) / (60 * 60 * 24 * 365 / 12)
+            elif transform_to == '1/4 year':
+                return (1 / self.single_sided_frequency_axis) / (60 * 60 * 24 * 365 / 4)
+            elif transform_to == '364 days, i.e., 13 moon phases (28 days), or 52 weeks':
+                return (1 / self.single_sided_frequency_axis) / (60 * 60 * 24 * 13 * 28)
+            elif transform_to == '1 year, i.e., 365 days':
                 return (1 / self.single_sided_frequency_axis) / (60 * 60 * 24 * 365)
             return 1 / self.single_sided_frequency_axis
         else:
@@ -84,10 +92,18 @@ class FFTProcessor:
                                 'period (second)': self.single_sided_period_axis(),
                                 'period (minute)': self.single_sided_period_axis('minute'),
                                 'period (hour)': self.single_sided_period_axis('hour'),
+                                'period (half day, i.e., 12 hours)':
+                                    self.single_sided_period_axis('half day, i.e., 12 hours'),
                                 'period (day)': self.single_sided_period_axis('day'),
                                 'period (week)': self.single_sided_period_axis('week'),
                                 'period (28 days)': self.single_sided_period_axis('28 days'),
-                                'period (year)': self.single_sided_period_axis('year')},
+                                'period (1/12 year)': self.single_sided_period_axis('1/12 year'),
+                                'period (1/4 year)': self.single_sided_period_axis('1/4 year'),
+                                'period (364 days, i.e., 13 moon phases (28 days), or 52 weeks)':
+                                    self.single_sided_period_axis(
+                                        '364 days, i.e., 13 moon phases (28 days), or 52 weeks'),
+                                'period (1 year, i.e., 365 days)':
+                                    self.single_sided_period_axis('1 year, i.e., 365 days')},
                                index=[self.single_sided_frequency_axis]).rename_axis('frequency')  # type: DataFrame
         if not ordered_by_magnitude:
             return results
