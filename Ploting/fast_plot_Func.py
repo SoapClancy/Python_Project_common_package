@@ -100,6 +100,22 @@ def series(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5,
     return plot
 
 
+@show_fig
+def stem(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5 * 0.618), **kwargs):
+    @creat_fig(figure_size, ax)
+    def plot(ax_):
+        nonlocal y
+        kwargs.setdefault('markerfmt', ' ')
+        kwargs.setdefault('basefmt', ' ')
+        if y is None:
+            y = np.arange(0, x.size)
+            return ax_.stem(y, x, use_line_collection=True, **kwargs)
+        else:
+            return ax_.stem(x, y, use_line_collection=True, **kwargs)
+
+    return plot
+
+
 def time_series(x_axis_format=None, tz=None, **kwargs):
     if not isinstance(kwargs['x'][0], datetime.datetime):
         raise Exception("time series的x值必须是datetime.datetime对象")

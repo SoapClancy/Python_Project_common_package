@@ -91,7 +91,7 @@ class DatetimeOnehotEncoder:
             if this_to_encoding_args == 'day':
                 columns.extend(list(product(('day',), range(1, 32))))  # 从1开始
             if this_to_encoding_args == 'weekday':
-                columns.extend(list(product(('weekday',), range(1, 8))))  # 从1开始，实际是isoweekday
+                columns.extend(list(product(('weekday',), range(1, 8))))  # 从1开始，实际是isoweekday，1代表Monday
             if this_to_encoding_args == 'holiday':
                 columns.extend(list(product(('holiday',), range(2))))
             if this_to_encoding_args == 'hour':

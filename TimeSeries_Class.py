@@ -10,12 +10,15 @@ from Filtering.simple_filtering_Func import change_point_outlier_by_sliding_wind
     linear_series_outlier
 from enum import Enum
 import copy
+import isoweek
 
 
 def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
                              new_time_series_df: pd.DataFrame,
                              naively_ignore_tz_info: bool = True,
-                             resolution: str = 'second') -> pd.DataFrame:
+                             resolution: str = 'second',
+                             do_interpolate: bool = True,
+                             interpolate_method='time') -> pd.DataFrame:
     """
     用于合并两个two_time_series_df。two_time_series_df指的是以datetime作为index的pd.DataFrame。
     方法在于分别从两个df的index中提取出year, month, day, hour, minute, second作为新的columns，再inner merge
@@ -24,6 +27,8 @@ def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
     :param naively_ignore_tz_info: 不用考虑tz转换！df自带的merge如果遇到一个df的index有tz而另一个df的index没有tz就没办法合并，
     而且转成有tz的index有可能因为DST造成ambiguous exception
     :param resolution: 合并的resolution，目前只支持到second
+    :param do_interpolate
+    :param interpolate_method
     :return:
     """
     main_time_series_df = copy.deepcopy(main_time_series_df)
@@ -54,11 +59,92 @@ def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
         merge_main_time_series_df_new_time_series_df.drop(columns=['year', 'month', 'day', 'hour', 'minute', 'second'],
                                                           inplace=True)
         merge_main_time_series_df_new_time_series_df.set_index(main_time_series_df.index, inplace=True)
-        merge_main_time_series_df_new_time_series_df.interpolate(method='time', inplace=True)
+        if do_interpolate:
+            merge_main_time_series_df_new_time_series_df.interpolate(method=interpolate_method, inplace=True)
     # TODO new_time_series_df精度比main_time_series_df高的情况。这里需要aggregate
     else:
         raise
     return merge_main_time_series_df_new_time_series_df
+
+
+class TimeSeries:
+    __slots__ = ('data',)
+
+    def __init__(self, data: pd.DataFrame):
+        if not isinstance(data, pd.DataFrame):
+            raise Exception("Time series data must be pd.DataFrame")
+        if not isinstance(data.index, pd.DatetimeIndex):
+            raise Exception("Time series data must use pd.DatetimeIndex as index")
+        self._check_ordinal_time_delta(data)
+        self.data = data  # type: pd.DataFrame
+
+    @staticmethod
+    def _check_ordinal_time_delta(data):
+        # 检查每两个记录之间的time delta是否相等，否则raise
+        delta = data.index[1:] - data.index[:-1]
+        if (delta.max() - delta.min()) > datetime.timedelta(seconds=1):
+            raise Exception('data的index的间隔不是一个常数')
+
+    def resample(self, **kwargs):
+        resampled_data = self.data.resample(**kwargs)
+        return resampled_data
+
+    @property
+    def freq_in_second(self):
+        # 指的是每两个记录之间的间隔
+        return (self.data.index[1] - self.data.index[0]).seconds
+
+    @property
+    def number_of_recordings_per_day(self):
+        return int(24 * 3600 / self.freq_in_second)
+
+
+class UnivariateTimeSeries(TimeSeries):
+    def detrend(self,
+                resample_args_dict: dict, *,
+                inplace: bool = False) -> pd.DataFrame:  # e.g., resample_args_dict={'rule': '24H'}
+        # downsample
+        trend = self.resample(**resample_args_dict).mean()
+        detrended_data = merge_two_time_series_df(self.data, trend, do_interpolate=False)
+        detrended_data = detrended_data.fillna(method='pad', axis=0)
+        detrended_data.iloc[:, 0] = detrended_data.iloc[:, 0] - detrended_data.iloc[:, 1]  # 只有两列
+        detrended_data = detrended_data.iloc[:, [0]]
+        if inplace:
+            self.data = detrended_data
+        return detrended_data
+
+    def plot_group_by_week(self, **kwargs):
+        # 补齐第一周
+        first_missing_week = np.full((self.data.index.weekday[0], self.number_of_recordings_per_day), np.nan)
+        # 补齐最后一周
+        last_missing_week = np.full((6 - self.data.index.weekday[-1], self.number_of_recordings_per_day), np.nan)
+        # 补齐
+        data_extend = np.concatenate((first_missing_week,
+                                      self.data.values.reshape((-1, self.number_of_recordings_per_day)),
+                                      last_missing_week
+                                      ), axis=0)
+        if not data_extend.shape[0] % 7 == 0:
+            raise Exception('应该能够整除...debug程序！')
+        final_results = data_extend.reshape((-1, 7, self.number_of_recordings_per_day))
+        # 计算平均值
+        final_results[np.isinf(final_results)] = np.nan
+        final_results_average_along_week = np.nanmean(final_results, axis=0)
+        # %% 画图
+        ax = None
+        for this_week_data in final_results:
+            ax = series(range(0, self.number_of_recordings_per_day * 7),
+                        this_week_data.flatten(), ax=ax, color='b',
+                        figure_size=(10, 2.4))
+        ax = series(range(0, self.number_of_recordings_per_day * 7),
+                    final_results_average_along_week.flatten(), ax=ax, color='r',
+                    label='Mean value',
+                    figure_size=(10, 2.4),
+                    x_lim=(-1, self.number_of_recordings_per_day * 7),
+                    x_ticks=(tuple(range(0, self.number_of_recordings_per_day * 7, self.number_of_recordings_per_day)),
+                             ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
+                    x_label='Day of week',
+                    y_label='Detrended log-load',
+                    **kwargs)
 
 
 class SynchronousTimeSeriesData:

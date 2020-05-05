@@ -153,6 +153,19 @@ class SimpleLSTM(nn.Module):
         return h_0, c_0
 
 
+class StackedBiLSTM(SimpleLSTM):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, *, dropout: float):
+        super().__init__(input_size, hidden_size, output_size)
+        self.lstm_layer = nn.LSTM(input_size,
+                                  hidden_size,
+                                  num_layers=3,
+                                  batch_first=True,
+                                  bidirectional=True,
+                                  dropout=dropout)
+        self.linear_layer = nn.Linear(hidden_size * 2, output_size)
+        self.cuda()
+
+
 class MatlabLSTM:
     __slots__ = ('lstm_file_',)
 
