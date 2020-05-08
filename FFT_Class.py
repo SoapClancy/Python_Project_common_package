@@ -7,6 +7,8 @@ from datetime import timedelta
 from typing import Union, Tuple
 from Ploting.fast_plot_Func import series, hist, scatter, stem
 from enum import Enum, unique
+from pathlib import Path
+from Writting.utils import put_cached_png_into_a_docx
 
 
 class FFTProcessor:
@@ -17,15 +19,16 @@ class FFTProcessor:
         # 命名方式是：
         # ('convenient_period_unit_name',
         # 'convenient_frequency_unit_name',
-        # 'plot_x_lim', 👉 ()代表不设置限制，(x, y)代表一个图范围是x到y，((x1,y1), (x2,y2))代表两个图
+        # 'plot_x_lim', 👉 ()代表不设置限制让matplotlib自动决定，
+        # (x1, x2)代表一个图范围是x1到x2，((x1,x2), (x3,x4))代表两个图
         # 'scale_factor')
         second = ('second', '1/second', (0, None), 1)
         minute = ('minute', '1/minute', (-10e-4, None), 60)
-        hour = ('hour', '1/hour', (-10e-4, None), 60 * 60)
-        half_day = ('half day', '1/half day', (-0.05, None), 60 * 60 * 12)
-        day = ('day', '1/day', (-0.1, 12.5), 60 * 60 * 24)
+        hour = ('hour', '1/hour', ((-10e-4, 0.3), (-10e-4, None)), 60 * 60)
+        half_day = ('half day', '1/half day', ((-0.05, 4), (-0.05, None)), 60 * 60 * 12)
+        day = ('day', '1/day', ((-0.1, 12), (-0.1, None)), 60 * 60 * 24)
         week = ('week', '1/week', (3.5, 10.5), 60 * 60 * 24 * 7)
-        _28_days = ('28 days', '1/28 days', (-0.25, None), 60 * 60 * 24 * 28)
+        _28_days = ('28 days', '1/28 days', ((-0.25, 100), (-0.25, None)), 60 * 60 * 24 * 28)
         _364_days = ('364 days', '1/364 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 364)
         _365_days = ('365 days', '1/365 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 365)
         _365_25_days = ('365.25 days', '1/365.25 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 365.25)
@@ -52,7 +55,7 @@ class FFTProcessor:
         def all_convenient_frequency_unit_names(cls):
             return tuple([x.value[1] for x in cls])
 
-    def __init__(self, original_signal: ndarray, *, sampling_period: int, name: str = None):
+    def __init__(self, original_signal: ndarray, *, sampling_period: int, name: str):
         if original_signal.ndim > 1:
             raise Exception('Only consider 1-D data')
         self.original_signal = original_signal
@@ -153,49 +156,84 @@ class FFTProcessor:
         else:
             return results.sort_values(by=['magnitude'], ascending=False)
 
-    def plot(self, considered_frequency_units: Tuple[str, ...] = None):
+    def plot(self,
+             considered_frequency_units: Tuple[str, ...] = None, *,
+             save_as_docx_path: Path = None):
         """
         画频谱图和相位图
         """
         full_results_to_be_plot = self.single_sided_frequency_axis_all_supported()
         if considered_frequency_units is None:
             considered_frequency_units = self.SupportedTransformedPeriod.all_convenient_frequency_unit_names()
+        # 如果要存成docx，那就准备buffer
+        if save_as_docx_path:
+            # save_as_docx_buff.key就是图像的名字
+            # save_as_docx_buff.value的形式是[buffer，宽度]
+            sorted_key = np.array(
+                [list(map(lambda x: self.name + ' ' + x + ' (magnitude)', considered_frequency_units)),
+                 list(map(lambda x: self.name + ' ' + x + ' (phase angle)', considered_frequency_units))]).flatten('F')
+            save_as_docx_buff = {key: [None, None] for key in sorted_key}
+            save_to_buffer = True
+        else:
+            save_as_docx_buff = {}
+            save_to_buffer = False
 
         def plot_single(_this_considered_frequency_unit,
-                        _x_lim,
-                        _y_lim_freq=None,
-                        _y_lim_phase=None):
-            stem(x=full_results_to_be_plot[_this_considered_frequency_unit].values,
-                 y=full_results_to_be_plot['magnitude'].values,
-                 x_lim=_x_lim,
-                 y_lim=_y_lim_freq,
-                 x_label=f'Frequency ({_this_considered_frequency_unit})',
-                 y_label='Magnitude')
-            stem(x=full_results_to_be_plot[_this_considered_frequency_unit].values,
-                 y=full_results_to_be_plot['phase angle (rad)'].values,
-                 x_lim=_x_lim,
-                 y_lim=_y_lim_phase,
-                 x_label=f'Frequency ({_this_considered_frequency_unit})',
-                 y_label='Phase angle (rad)')
+                        x_lim=(None, None)):
+            if _this_considered_frequency_unit == '1/364 days':
+                tt = 1
+            x = full_results_to_be_plot[_this_considered_frequency_unit].values
+            # magnitude
+            y = full_results_to_be_plot['magnitude'].values
+            if (x_lim[0] is not None) and (x_lim[1] is not None):
+                y_lim = (-0.5,
+                         1.1 * np.max(y[np.argmin(np.abs(x - x_lim[0])):np.argmin(np.abs(x - x_lim[1]))]))
+            else:
+                y_lim = (-0.5, None)
+            buf = stem(x=x,
+                       y=full_results_to_be_plot['magnitude'].values,
+                       x_lim=x_lim,
+                       y_lim=y_lim,
+                       x_label=f'Frequency ({_this_considered_frequency_unit})',
+                       y_label='Magnitude',
+                       save_to_buffer=save_to_buffer)
+            if save_to_buffer:
+                if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0]:
+                    save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0] = buf
+                else:
+                    save_as_docx_buff.setdefault(self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)_2',
+                                                 (buf, None))
+            # phase
+            buf = stem(x=x,
+                       y=full_results_to_be_plot['phase angle (rad)'].values,
+                       x_lim=x_lim,
+                       x_label=f'Frequency ({_this_considered_frequency_unit})',
+                       y_label='Phase angle (rad)',
+                       save_to_buffer=save_to_buffer)
+            if save_to_buffer:
+                if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)'][0]:
+                    save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)'][0] = buf
+                else:
+                    save_as_docx_buff.setdefault(self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)_2',
+                                                 (buf, None))
 
         for this_considered_frequency_unit in considered_frequency_units:
             value = self.SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
                 this_considered_frequency_unit
             )
             try:
-                x_lim = value[2][0][0]
-                # 频率_子1
+                _ = value[2][0][0]
+                # 子1
                 plot_single(this_considered_frequency_unit,
-                            value[2][0],
-                            (-0.5, full_results_to_be_plot['magnitude'].values[:1000].max() * 1.3))
-                # 频率_子2
+                            value[2][0])
+                # 子2
                 plot_single(this_considered_frequency_unit,
-                            value[2][1],
-                            (-0.5, None))
+                            value[2][1])
             except (IndexError, TypeError):  # 说明'plot_x_lim'要么是()，要么是(x, y)
                 plot_single(this_considered_frequency_unit,
-                            value[2],
-                            (-0.5, None))
+                            value[2])
+        if save_to_buffer:
+            put_cached_png_into_a_docx(save_as_docx_buff, save_as_docx_path, 2)
 
     def top_n_high(self):
         pass

@@ -90,13 +90,22 @@ class TimeSeries:
         return resampled_data
 
     @property
-    def freq_in_second(self):
-        # 指的是每两个记录之间的间隔
-        return (self.data.index[1] - self.data.index[0]).seconds
+    def adjacent_recordings_timedelta(self) -> datetime.timedelta:
+        return self.data.index[1] - self.data.index[0]
 
     @property
     def number_of_recordings_per_day(self):
-        return int(24 * 3600 / self.freq_in_second)
+        number = int(24 * 3600 / self.adjacent_recordings_timedelta.seconds)
+        if number == 0:
+            raise Exception('每天的记录数为0')
+        return number
+
+    @property
+    def number_of_recordings_per_week(self):
+        number = int(24 * 3600 * 7 / self.adjacent_recordings_timedelta.seconds)
+        if number == 0:
+            raise Exception('每周的记录数为0')
+        return number
 
 
 class UnivariateTimeSeries(TimeSeries):
@@ -115,36 +124,53 @@ class UnivariateTimeSeries(TimeSeries):
 
     def plot_group_by_week(self, **kwargs):
         # 补齐第一周
-        first_missing_week = np.full((self.data.index.weekday[0], self.number_of_recordings_per_day), np.nan)
+        missing_recording_number = self.data.index.weekday[0] * self.number_of_recordings_per_day
+        first_missing_week = pd.DataFrame(np.nan,
+                                          columns=self.data.columns,
+                                          index=pd.date_range(
+                                              end=self.data.index[0] - self.adjacent_recordings_timedelta,
+                                              periods=missing_recording_number,
+                                              freq=self.adjacent_recordings_timedelta))
         # 补齐最后一周
-        last_missing_week = np.full((6 - self.data.index.weekday[-1], self.number_of_recordings_per_day), np.nan)
+        missing_recording_number = (6 - self.data.index.weekday[-1]) * self.number_of_recordings_per_day
+        last_missing_week = pd.DataFrame(np.nan,
+                                         columns=self.data.columns,
+                                         index=pd.date_range(
+                                             start=self.data.index[-1] + self.adjacent_recordings_timedelta,
+                                             periods=missing_recording_number,
+                                             freq=self.adjacent_recordings_timedelta))
+
         # 补齐
-        data_extend = np.concatenate((first_missing_week,
-                                      self.data.values.reshape((-1, self.number_of_recordings_per_day)),
-                                      last_missing_week
-                                      ), axis=0)
-        if not data_extend.shape[0] % 7 == 0:
-            raise Exception('应该能够整除...debug程序！')
-        final_results = data_extend.reshape((-1, 7, self.number_of_recordings_per_day))
-        # 计算平均值
-        final_results[np.isinf(final_results)] = np.nan
-        final_results_average_along_week = np.nanmean(final_results, axis=0)
+        data_extend = pd.concat((first_missing_week,
+                                 self.data,
+                                 last_missing_week))
+        total_number_of_weeks = int(data_extend.__len__() / self.number_of_recordings_per_week)
+        data_extend['week_no_in_the_dataset'] = np.arange(total_number_of_weeks).repeat(
+            self.number_of_recordings_per_week)
+        # group by
+        data_extend = data_extend.groupby('week_no_in_the_dataset')
         # %% 画图
         ax = None
-        for this_week_data in final_results:
-            ax = series(range(0, self.number_of_recordings_per_day * 7),
-                        this_week_data.flatten(), ax=ax, color='b',
+        average = []
+        for _, this_week_data in data_extend:
+            this_week_data = this_week_data.reindex(
+                columns=this_week_data.columns.difference(['week_no_in_the_dataset'])).values.flatten()
+            average.append(this_week_data)
+            ax = series(range(0, self.number_of_recordings_per_week),
+                        this_week_data, ax=ax, color='b',
                         figure_size=(10, 2.4))
-        ax = series(range(0, self.number_of_recordings_per_day * 7),
-                    final_results_average_along_week.flatten(), ax=ax, color='r',
+        average = np.array(average)
+        average[np.isinf(average)] = np.nan
+        ax = series(range(0, self.number_of_recordings_per_week),
+                    np.nanmean(average, axis=0),
+                    ax=ax, color='r',
                     label='Mean value',
                     figure_size=(10, 2.4),
-                    x_lim=(-1, self.number_of_recordings_per_day * 7),
-                    x_ticks=(tuple(range(0, self.number_of_recordings_per_day * 7, self.number_of_recordings_per_day)),
+                    x_lim=(-1, self.number_of_recordings_per_week),
+                    x_ticks=(tuple(range(0, self.number_of_recordings_per_week, self.number_of_recordings_per_day)),
                              ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']),
-                    x_label='Day of week',
-                    y_label='Detrended log-load',
                     **kwargs)
+        return ax
 
 
 class SynchronousTimeSeriesData:

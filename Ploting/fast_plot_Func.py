@@ -6,6 +6,7 @@ from matplotlib import cm
 from typing import Union
 import datetime
 import matplotlib.dates as mdates
+from io import BytesIO
 
 
 def creat_fig(size: tuple, ax=None):
@@ -29,6 +30,7 @@ def show_fig(func):
                 save_format: str = 'png',
                 legend_loc: str = 'best',
                 ncol: int = 1,
+                save_to_buffer: bool = False,
                 **kwargs):
         ax = func(*args, **kwargs)
         if kwargs.get('label') is not None:
@@ -45,7 +47,14 @@ def show_fig(func):
         if isinstance(y_ticks, tuple):
             plt.yticks(*y_ticks)
         plt.grid(True)
-        plt.show()
+        # 如果要存入buffer
+        if save_to_buffer:
+            buf = BytesIO()
+            plt.savefig(buf)
+            plt.close()
+            return buf
+        else:
+            plt.show()
         if all((isinstance(save_file_, str), isinstance(save_format, str))):
             plt.savefig(save_file_ + '.' + save_format, format=save_format, dpi=300)
         return plt.gca()
@@ -109,9 +118,9 @@ def stem(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5
         kwargs.setdefault('basefmt', ' ')
         if y is None:
             y = np.arange(0, x.size)
-            return ax_.stem(y, x, use_line_collection=True, **kwargs)
+            return ax_.stem(y, x, 'b', use_line_collection=True, **kwargs)
         else:
-            return ax_.stem(x, y, use_line_collection=True, **kwargs)
+            return ax_.stem(x, y, 'b', use_line_collection=True, **kwargs)
 
     return plot
 
