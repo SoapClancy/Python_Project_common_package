@@ -48,11 +48,11 @@ class FFTProcessor:
             raise Exception('Unsupported transformed period')
 
         @classmethod
-        def all_convenient_period_unit_names(cls):
+        def list_all_convenient_period_unit_names(cls) -> tuple:
             return tuple([x.value[0] for x in cls])
 
         @classmethod
-        def all_convenient_frequency_unit_names(cls):
+        def list_all_convenient_frequency_unit_names(cls) -> tuple:
             return tuple([x.value[1] for x in cls])
 
     def __init__(self, original_signal: ndarray, *, sampling_period: int, name: str):
@@ -74,12 +74,15 @@ class FFTProcessor:
         return np.size(self.original_signal)
 
     @property
-    def _fft_results_direct(self) -> ndarray:
+    def _naive_fft_results_direct(self) -> ndarray:
+        """
+        直接调用FFT函数的结果
+        """
         return fftpack.fft(self.original_signal)
 
     @property
     def single_sided_amplitude(self) -> ndarray:
-        p2 = np.abs(self._fft_results_direct)
+        p2 = np.abs(self._naive_fft_results_direct)
         if self.length_of_signal % 2 == 0:
             p1 = p2[:int(self.length_of_signal / 2 + 1)]
             return p1
@@ -88,7 +91,7 @@ class FFTProcessor:
 
     @property
     def single_sided_angle(self) -> ndarray:
-        a2 = np.angle(self._fft_results_direct)
+        a2 = np.angle(self._naive_fft_results_direct)
         if self.length_of_signal % 2 == 0:
             a1 = a2[:int(self.length_of_signal / 2 + 1)]
             return a1
@@ -163,9 +166,9 @@ class FFTProcessor:
         画频谱图和相位图
         """
         full_results_to_be_plot = self.single_sided_frequency_axis_all_supported()
-        if considered_frequency_units is None:
-            considered_frequency_units = self.SupportedTransformedPeriod.all_convenient_frequency_unit_names()
-        # 如果要存成docx，那就准备buffer
+        considered_frequency_units = \
+            considered_frequency_units or self.SupportedTransformedPeriod.list_all_convenient_frequency_unit_names()
+        # %% 如果要存成docx，那就准备buffer
         if save_as_docx_path:
             # save_as_docx_buff.key就是图像的名字
             # save_as_docx_buff.value的形式是[buffer，宽度]
@@ -180,23 +183,14 @@ class FFTProcessor:
 
         def plot_single(_this_considered_frequency_unit,
                         x_lim=(None, None)):
-            if _this_considered_frequency_unit == '1/364 days':
-                tt = 1
             x = full_results_to_be_plot[_this_considered_frequency_unit].values
-            # magnitude
-            y = full_results_to_be_plot['magnitude'].values
-            if (x_lim[0] is not None) and (x_lim[1] is not None):
-                y_lim = (-0.5,
-                         1.1 * np.max(y[np.argmin(np.abs(x - x_lim[0])):np.argmin(np.abs(x - x_lim[1]))]))
-            else:
-                y_lim = (-0.5, None)
             buf = stem(x=x,
                        y=full_results_to_be_plot['magnitude'].values,
                        x_lim=x_lim,
-                       y_lim=y_lim,
+                       infer_y_lim_according_to_x_lim=True,
                        x_label=f'Frequency ({_this_considered_frequency_unit})',
                        y_label='Magnitude',
-                       save_to_buffer=save_to_buffer)
+                       save_to_buffer=False)
             if save_to_buffer:
                 if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0]:
                     save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0] = buf
@@ -229,7 +223,7 @@ class FFTProcessor:
                 # 子2
                 plot_single(this_considered_frequency_unit,
                             value[2][1])
-            except (IndexError, TypeError):  # 说明'plot_x_lim'要么是()，要么是(x, y)
+            except (IndexError, TypeError) as _:  # 说明'plot_x_lim'要么是()，要么是(x, y)
                 plot_single(this_considered_frequency_unit,
                             value[2])
         if save_to_buffer:
