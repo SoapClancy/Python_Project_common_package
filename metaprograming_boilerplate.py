@@ -2,6 +2,7 @@ from inspect import Parameter, Signature
 from collections import OrderedDict
 
 
+#
 def _make_setter(dcls):
     code = 'def __set__(self, instance, value):\n'
     for d in dcls.__mro__:
