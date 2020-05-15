@@ -2,13 +2,14 @@ import numpy as np
 import pandas as pd
 from numpy import ndarray, complex
 from pandas import DataFrame
-from scipy import fftpack
+from scipy import fft
 from datetime import timedelta
 from typing import Union, Tuple
 from Ploting.fast_plot_Func import series, hist, scatter, stem
 from enum import Enum, unique
 from pathlib import Path
 from Writting.utils import put_cached_png_into_a_docx
+from sklearn.linear_model import Lasso
 
 
 class FFTProcessor:
@@ -55,7 +56,7 @@ class FFTProcessor:
         def list_all_convenient_frequency_unit_names(cls) -> tuple:
             return tuple([x.value[1] for x in cls])
 
-    def __init__(self, original_signal: ndarray, *, sampling_period: int, name: str):
+    def __init__(self, original_signal: ndarray, *, sampling_period: Union[int, float], name: str):
         if original_signal.ndim > 1:
             raise Exception('Only consider 1-D data')
         self.original_signal = original_signal
@@ -73,33 +74,29 @@ class FFTProcessor:
     def length_of_signal(self) -> int:
         return np.size(self.original_signal)
 
-    @property
-    def _naive_fft_results_direct(self) -> ndarray:
+    def cal_naive_direct_fft(self) -> ndarray:
         """
         直接调用FFT函数的结果
         """
-        return fftpack.fft(self.original_signal)
+        return fft.fft(self.original_signal)
 
-    @property
-    def single_sided_amplitude(self) -> ndarray:
-        p2 = np.abs(self._naive_fft_results_direct)
+    def _cal_single_sided_amplitude(self) -> ndarray:
+        p2 = np.abs(self.cal_naive_direct_fft())
         if self.length_of_signal % 2 == 0:
             p1 = p2[:int(self.length_of_signal / 2 + 1)]
             return p1
         else:
             raise Exception('TODO')
 
-    @property
-    def single_sided_angle(self) -> ndarray:
-        a2 = np.angle(self._naive_fft_results_direct)
+    def _cal_single_sided_angle(self) -> ndarray:
+        a2 = np.angle(self.cal_naive_direct_fft())
         if self.length_of_signal % 2 == 0:
             a1 = a2[:int(self.length_of_signal / 2 + 1)]
             return a1
         else:
             raise Exception('TODO')
 
-    @property
-    def single_sided_frequency(self) -> ndarray:
+    def _cal_single_sided_frequency(self) -> ndarray:
         if self.length_of_signal % 2 == 0:
             return self.sampling_frequency * np.arange(0, self.length_of_signal / 2 + 1) / self.length_of_signal
         else:
@@ -110,7 +107,7 @@ class FFTProcessor:
         周期轴。根据fft (直接)计算出来的结果self.single_sided_frequency来推算
         """
         if self.length_of_signal % 2 == 0:
-            return (1 / self.single_sided_frequency) / \
+            return (1 / self._cal_single_sided_frequency()) / \
                    self.SupportedTransformedPeriod.get_by_convenient_period_unit_name(period_unit)
         else:
             raise Exception('TODO')
@@ -129,12 +126,12 @@ class FFTProcessor:
         :param ordered_by_magnitude: 是否排序
         :return:
         """
-        results = pd.DataFrame({'magnitude': self.single_sided_amplitude,
-                                'log magnitude': np.log(self.single_sided_amplitude),
-                                'phase angle (rad)': self.single_sided_angle})
+        results = pd.DataFrame({'magnitude': self._cal_single_sided_amplitude(),
+                                'log magnitude': np.log(self._cal_single_sided_amplitude()),
+                                'phase angle (rad)': self._cal_single_sided_angle()})
         for value in self.SupportedTransformedPeriod:
-            results[value.value[0]] = (1 / self.single_sided_frequency) / value.value[-1]
-        results.index = self.single_sided_frequency
+            results[value.value[0]] = (1 / self._cal_single_sided_frequency()) / value.value[-1]
+        results.index = self._cal_single_sided_frequency()
         results = results.rename_axis('frequency')
         if not ordered_by_magnitude:
             return results
@@ -147,12 +144,12 @@ class FFTProcessor:
         :param ordered_by_magnitude: 是否排序
         :return:
         """
-        results = pd.DataFrame({'magnitude': self.single_sided_amplitude,
-                                'log magnitude': np.log(self.single_sided_amplitude),
-                                'phase angle (rad)': self.single_sided_angle})
+        results = pd.DataFrame({'magnitude': self._cal_single_sided_amplitude(),
+                                'log magnitude': np.log(self._cal_single_sided_amplitude()),
+                                'phase angle (rad)': self._cal_single_sided_angle()})
         for value in self.SupportedTransformedPeriod:
-            results[value.value[1]] = self.single_sided_frequency * value.value[-1]
-        results.index = self.single_sided_frequency
+            results[value.value[1]] = self._cal_single_sided_frequency() * value.value[-1]
+        results.index = self._cal_single_sided_frequency()
         results = results.rename_axis('frequency')
         if not ordered_by_magnitude:
             return results
@@ -231,10 +228,6 @@ class FFTProcessor:
 
     def top_n_high(self):
         pass
-
-
-class LASSOFFT(FFTProcessor):
-    pass
 
 
 class STFT(FFTProcessor):
