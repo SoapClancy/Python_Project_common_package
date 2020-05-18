@@ -5,11 +5,12 @@ from pandas import DataFrame
 from scipy import fft
 from datetime import timedelta
 from typing import Union, Tuple
-from Ploting.fast_plot_Func import series, hist, scatter, stem
+from Ploting.fast_plot_Func import *
 from enum import Enum, unique
 from pathlib import Path
 from Writting.utils import put_cached_png_into_a_docx
-from sklearn.linear_model import Lasso
+from scipy.signal import stft
+from NdarraySubclassing import ComplexNdarray
 
 
 class FFTProcessor:
@@ -230,5 +231,49 @@ class FFTProcessor:
         pass
 
 
-class STFT(FFTProcessor):
-    pass
+class STFTProcessor(FFTProcessor):
+    __slots__ = ('scipy_signal_stft_results',)
+
+    def __init__(self, original_signal: ndarray, *, sampling_period: Union[int, float], name: str):
+        super().__init__(original_signal, sampling_period=sampling_period, name=name)
+
+    def call_scipy_signal_stft(self, frequency_unit: str = None, time_axis_denominator: int = None, **kwargs):
+        """
+        scipy.signal.stft
+        :param frequency_unit stft的频率轴的单位
+        :param time_axis_denominator stft的时间轴的normalisation系数
+        :return Tuple[ndarray频率, ndarray时间, ComplexNdarray傅里叶的复数结果]
+
+        注意，frequency_unit和time_axis_denominator不应该耦合，它们可以独立调整。另外，虽然自动化程度不高，
+        time_axis_denominator依然最好手动设置，因为stft直接出来的时间轴的scale就已经和self.sampling_frequency耦合了，
+        如果再去做自动化的time_axis_denominator推测的话，代码会过于臃肿且复杂
+        """
+        if kwargs.get('nperseg') is None:
+            raise Exception("'nperseg' should be given")
+        scipy_signal_stft_results = list(stft(self.original_signal, fs=self.sampling_frequency, **kwargs))
+        if frequency_unit is not None:
+            scipy_signal_stft_results[0] *= self.SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
+                frequency_unit
+            )[-1]
+        if time_axis_denominator is not None:
+            scipy_signal_stft_results[1] /= time_axis_denominator
+        return scipy_signal_stft_results
+
+    def plot_scipy_signal_stft(self, call_scipy_signal_stft_args: dict = None):
+        """
+        画scipy.signal.stft的结果
+        """
+        call_scipy_signal_stft_args = call_scipy_signal_stft_args or {}
+        scipy_signal_stft_results = self.call_scipy_signal_stft(**call_scipy_signal_stft_args)
+        pcolormesh(x=scipy_signal_stft_results[1],
+                   y=scipy_signal_stft_results[0],
+                   color_value=np.abs(scipy_signal_stft_results[2]),
+                   y_lim=(0, 2.5))
+
+        tt = np.abs(scipy_signal_stft_results[2])
+        tt_angle = np.angle(scipy_signal_stft_results[2])
+        ax = series(tt[2], label='day')
+        ax = series(tt[4], ax=ax, label='half day')
+
+        ax = series(tt_angle[2], label='day')
+        ax = series(tt_angle[4], ax=ax, label='half day')

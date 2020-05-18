@@ -406,11 +406,8 @@ class UnivariateGaussianMixtureModel(UnivariateProbabilisticModel):
 
     def sample(self, number_of_samples: int) -> ndarray:
         def gmm_sampler(x: GaussianMixture):
-            one_sample = float(x.sample(1)[0])
-            # 如果不符合边界条件，就重新采样
-            while not ((one_sample > self.theoretic_min_value) and (one_sample < self.theoretic_max_value)):
-                one_sample = float(x.sample(1)[0])
-            return one_sample
+            new_samples = x.sample(out_of_bound_idx_num.size)[0].flatten()
+            return new_samples
 
         try:
             sample_results = self.gmm.sample(number_of_samples)[0].flatten()
@@ -425,8 +422,11 @@ class UnivariateGaussianMixtureModel(UnivariateProbabilisticModel):
 
         out_of_bound_idx_num = np.argwhere(np.bitwise_or(sample_results < self.theoretic_min_value,
                                                          sample_results > self.theoretic_max_value)).flatten()
-        for this_out_of_bound_idx_num in out_of_bound_idx_num:
-            sample_results[this_out_of_bound_idx_num] = gmm_sampler(self.gmm)
+        while out_of_bound_idx_num.size > 0:
+            sample_results[out_of_bound_idx_num] = gmm_sampler(self.gmm)
+            out_of_bound_idx_num = np.argwhere(np.bitwise_or(sample_results < self.theoretic_min_value,
+                                                             sample_results > self.theoretic_max_value)).flatten()
+
         return sample_results
 
     def pdf_estimate(self, x: ndarray, **kwargs):
