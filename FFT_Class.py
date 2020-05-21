@@ -11,6 +11,8 @@ from pathlib import Path
 from Writting.utils import put_cached_png_into_a_docx
 from scipy.signal import stft
 from NdarraySubclassing import ComplexNdarray
+from Ploting.utils import BufferedFigureSaver
+from TimeSeries_Class import TimeSeries
 
 
 class FFTProcessor:
@@ -232,10 +234,15 @@ class FFTProcessor:
 
 
 class STFTProcessor(FFTProcessor):
-    __slots__ = ('scipy_signal_stft_results',)
+    __slots__ = ('scipy_signal_stft_results', 'original_signal_as_time_series')
 
-    def __init__(self, original_signal: ndarray, *, sampling_period: Union[int, float], name: str):
-        super().__init__(original_signal, sampling_period=sampling_period, name=name)
+    def __init__(self, original_signal_as_time_series: TimeSeries, *,
+                 sampling_period: Union[int, float],
+                 name: str):
+        super().__init__(original_signal_as_time_series.values,
+                         sampling_period=sampling_period,
+                         name=name)
+        self.original_signal_as_time_series = original_signal_as_time_series
 
     def call_scipy_signal_stft(self, frequency_unit: str = None, time_axis_denominator: int = None, **kwargs):
         """
@@ -259,7 +266,7 @@ class STFTProcessor(FFTProcessor):
             scipy_signal_stft_results[1] /= time_axis_denominator
         return scipy_signal_stft_results
 
-    def plot_scipy_signal_stft(self, call_scipy_signal_stft_args: dict = None):
+    def plot_scipy_signal_stft_aggregated(self, call_scipy_signal_stft_args: dict = None):
         """
         画scipy.signal.stft的结果
         """
@@ -277,3 +284,8 @@ class STFTProcessor(FFTProcessor):
 
         ax = series(tt_angle[2], label='day')
         ax = series(tt_angle[4], ax=ax, label='half day')
+
+    def plot_scipy_signal_stft(self, call_scipy_signal_stft_args: dict = None):
+        call_scipy_signal_stft_args = call_scipy_signal_stft_args or {}
+        scipy_signal_stft_results = self.call_scipy_signal_stft(**call_scipy_signal_stft_args)
+        BufferedFigureSaver()

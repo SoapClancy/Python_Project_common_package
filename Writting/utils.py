@@ -1,6 +1,6 @@
 from typing import List, Union
 from pathlib import Path
-from Writting import new_document
+from Writting import docx_document_template_to_collect_figures
 from docx import Document
 from docx.shared import Cm, Pt
 from File_Management.path_and_file_management_Func import try_to_find_file_if_exist_then_delete, \
@@ -11,7 +11,7 @@ def put_png_file_into_a_docx(png_file_in_a_dict: dict, docx_file_path: Union[str
     """
     png_file_in_a_dict： key就是名字，value的形式是[图像，宽度]
     """
-    document = new_document()
+    document = docx_document_template_to_collect_figures()
     if cols == 2:
         rows = int(png_file_in_a_dict.__len__()) + 1
     elif cols == 1:
@@ -55,3 +55,7 @@ def put_cached_png_into_a_docx(cached_png: dict,
     :param cols
     """
     put_png_file_into_a_docx(cached_png, docx_file_path, cols)
+
+
+def put_cached_png_into_a_docx_new():
+    pass

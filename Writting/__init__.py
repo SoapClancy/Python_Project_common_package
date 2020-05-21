@@ -5,7 +5,7 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT as WD_ALIGN_PARAGRAPH
 
 
-def new_document():
+def docx_document_template_to_collect_figures():
     this_document = Document()
 
     style = this_document.styles['Normal']
@@ -23,3 +23,5 @@ def new_document():
     paragraph_format.space_before = Pt(0)
     paragraph_format.space_after = Pt(0)
     return this_document
+
+
