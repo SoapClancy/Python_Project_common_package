@@ -1,6 +1,6 @@
 import datetime
-from Time_Processing.format_convert_Func import datetime64_ndarray_to_datetime_tuple, \
-    find_nearest_datetime_idx_in_datetime_iterable
+from Time_Processing.format_convert_Func import datetime64_ndarray_to_datetime_tuple
+from Time_Processing.datetime_utils import find_nearest_datetime_idx_in_datetime_iterable
 from Ploting.fast_plot_Func import time_series, series
 from typing import Tuple, Union, Callable
 import numpy as np
@@ -11,6 +11,8 @@ from Filtering.simple_filtering_Func import change_point_outlier_by_sliding_wind
 from enum import Enum
 import copy
 import isoweek
+from Time_Processing.datetime_utils import find_nearest_datetime_idx_in_datetime_iterable
+from scipy.signal import get_window
 
 
 def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
@@ -67,31 +69,47 @@ def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
     return merge_main_time_series_df_new_time_series_df
 
 
-class TimeSeries:
-    __slots__ = ('data',)
+class TimeSeries(pd.DataFrame):
+    __slots__ = ()
 
-    def __init__(self, data: pd.DataFrame):
-        if not isinstance(data, pd.DataFrame):
-            raise Exception("Time series data must be pd.DataFrame")
-        if not isinstance(data.index, pd.DatetimeIndex):
-            raise Exception("Time series data must use pd.DatetimeIndex as index")
-        self._check_ordinal_time_delta(data)
-        self.data = data  # type: pd.DataFrame
+    @property
+    def _constructor(self):
+        return TimeSeries
 
-    @staticmethod
-    def _check_ordinal_time_delta(data):
+    @property
+    def _constructor_expanddim(self):
+        return pd.DataFrame
+
+    @property
+    def _constructor_sliced(self):
+        return pd.Series
+
+    def _check_ordinal_time_delta(self):
         # 检查每两个记录之间的time delta是否相等，否则raise
-        delta = data.index[1:] - data.index[:-1]
+        delta = self.index[1:] - self.index[:-1]
         if (delta.max() - delta.min()) > datetime.timedelta(seconds=1):
             raise Exception('data的index的间隔不是一个常数')
 
-    def resample(self, **kwargs):
-        resampled_data = self.data.resample(**kwargs)
-        return resampled_data
+    def __init__(self, *args,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        if not isinstance(self.index, pd.DatetimeIndex):
+            raise Exception("Time series data must use pd.DatetimeIndex as index")
+        self._check_ordinal_time_delta()
+
+    def view_as_dataframe(self):
+        """
+        配合pycharm的scientific mode显示
+        """
+        return pd.DataFrame(self)
+
+    def __repr__(self):
+        return f'Time series from {self.index[0]} to {self.index[-1]}, ' \
+               f'resolution = {self.adjacent_recordings_timedelta}'
 
     @property
     def adjacent_recordings_timedelta(self) -> datetime.timedelta:
-        return self.data.index[1] - self.data.index[0]
+        return self.index[1] - self.index[0]
 
     @property
     def number_of_recordings_per_day(self):
@@ -107,6 +125,65 @@ class TimeSeries:
             raise Exception('每周的记录数为0')
         return number
 
+    def to_windowed_time_series(self, *, window_length: datetime.timedelta, window: str = None):
+        return WindowedTimeSeries(self, window_length=window_length, window=window)
+
+
+class WindowedTimeSeries(TimeSeries):
+    __slots__ = ('window_interval', 'window', 'window_length', '__iter_count')
+
+    def __init__(self, *args, window_length: datetime.timedelta, window: str = None,
+                 **kwargs):
+        super().__init__(*args, **kwargs)
+        self.window = window
+        self.window_length = window_length
+        setattr(self, 'window_interval', self._cal_window_interval())
+
+    def __repr__(self):
+        return f'Windowed time series from {self.index[0]} to {self.index[-1]}, ' \
+               f'resolution = {self.adjacent_recordings_timedelta}, ' \
+               f'window = {self.window}, ' \
+               f'window_length = {self.window_length}'
+
+    def _cal_window_interval(self) -> tuple:
+        """
+        计算window两个边界对应的索引
+        """
+        self_index_as_asi8 = self.index.asi8
+        window_interval = [self.index[0]]
+        while True:
+            window_interval_next = window_interval[-1] + self.window_length
+            if window_interval_next > self.index[-1]:
+                window_interval.append(self.index[-1])
+                break
+            else:
+                # 找到self.index中距离window_interval_next中最近的一个，防止__getitem__找不到对应的index
+                if window_interval_next not in self.index:
+                    window_interval_next = self.index[np.argmin(np.abs(self_index_as_asi8 -
+                                                                       window_interval_next.value))]
+                window_interval.append(window_interval_next)
+        return tuple(window_interval)
+
+    def __getitem__(self, index: int) -> TimeSeries:
+        windowed_data = self.loc[self.window_interval[index]:self.window_interval[index + 1]].iloc[:-1]
+        # 增加必要的窗函数
+        if self.window is not None:
+            scipy_window = get_window(self.window, windowed_data.__len__()).reshape(-1, 1)
+            windowed_data *= np.tile(scipy_window, (1, windowed_data.shape[-1]))
+        return windowed_data
+
+    def __iter__(self):
+        self.__iter_count = 0  # reset，以便以后继续能iter
+        return self
+
+    def __next__(self) -> TimeSeries:
+        try:
+            this_window_data = self[self.__iter_count]
+            self.__iter_count += 1
+        except IndexError:
+            raise StopIteration
+        return this_window_data
+
 
 class UnivariateTimeSeries(TimeSeries):
     def detrend(self,
@@ -114,35 +191,33 @@ class UnivariateTimeSeries(TimeSeries):
                 inplace: bool = False) -> pd.DataFrame:  # e.g., resample_args_dict={'rule': '24H'}
         # downsample
         trend = self.resample(**resample_args_dict).mean()
-        detrended_data = merge_two_time_series_df(self.data, trend, do_interpolate=False)
+        detrended_data = merge_two_time_series_df(self, trend, do_interpolate=False)
         detrended_data = detrended_data.fillna(method='pad', axis=0)
         detrended_data.iloc[:, 0] = detrended_data.iloc[:, 0] - detrended_data.iloc[:, 1]  # 只有两列
         detrended_data = detrended_data.iloc[:, [0]]
-        if inplace:
-            self.data = detrended_data
         return detrended_data
 
     def plot_group_by_week(self, **kwargs):
         # 补齐第一周
-        missing_recording_number = self.data.index.weekday[0] * self.number_of_recordings_per_day
+        missing_recording_number = self.index.weekday[0] * self.number_of_recordings_per_day
         first_missing_week = pd.DataFrame(np.nan,
-                                          columns=self.data.columns,
+                                          columns=self.columns,
                                           index=pd.date_range(
-                                              end=self.data.index[0] - self.adjacent_recordings_timedelta,
+                                              end=self.index[0] - self.adjacent_recordings_timedelta,
                                               periods=missing_recording_number,
                                               freq=self.adjacent_recordings_timedelta))
         # 补齐最后一周
-        missing_recording_number = (6 - self.data.index.weekday[-1]) * self.number_of_recordings_per_day
+        missing_recording_number = (6 - self.index.weekday[-1]) * self.number_of_recordings_per_day
         last_missing_week = pd.DataFrame(np.nan,
-                                         columns=self.data.columns,
+                                         columns=self.columns,
                                          index=pd.date_range(
-                                             start=self.data.index[-1] + self.adjacent_recordings_timedelta,
+                                             start=self.index[-1] + self.adjacent_recordings_timedelta,
                                              periods=missing_recording_number,
                                              freq=self.adjacent_recordings_timedelta))
 
         # 补齐
         data_extend = pd.concat((first_missing_week,
-                                 self.data,
+                                 self,
                                  last_missing_week))
         total_number_of_weeks = int(data_extend.__len__() / self.number_of_recordings_per_week)
         data_extend['week_no_in_the_dataset'] = np.arange(total_number_of_weeks).repeat(

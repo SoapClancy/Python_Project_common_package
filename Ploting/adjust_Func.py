@@ -45,3 +45,24 @@ def adjust_legend_in_ax(ax, *, protocol=None, **kwargs):
         kwargs.setdefault('loc', 'upper center')
         ax.legend(**kwargs)
     return ax
+
+
+def adjust_lim_label_ticks(ax, **kwargs):
+    for key, item in kwargs.items():
+        if key == 'x_lim':
+            func = ax.set_xlim
+        elif key == 'y_lim':
+            func = ax.set_ylim
+        elif key == 'x_ticks':
+            func = ax.set_xticks
+        elif key == 'y_ticks':
+            func = ax.set_yticks
+        elif key == 'x_label':
+            func = ax.set_xlabel
+        elif key == 'y_label':
+            func = ax.set_ylabel
+        else:
+            raise Exception("Unsupported keyword(s)")
+        func(item)
+
+    return ax

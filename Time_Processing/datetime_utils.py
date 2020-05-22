@@ -1,3 +1,5 @@
+import time
+
 from .format_convert_Func import datetime64_ndarray_to_datetime_tuple
 from numpy import ndarray
 import numpy as np
@@ -132,3 +134,10 @@ class DatetimeOnehotEncoder:
         # 写入pd.DataFrame
         encoding_df = pd.DataFrame(encoding_df, columns=self.encoding_df_template.columns)
         return encoding_df
+
+
+def find_nearest_datetime_idx_in_datetime_iterable(datetime_iterable: Iterable[datetime],
+                                                   datetime_to_find: datetime) -> int:
+    datetime_to_find = time.mktime(datetime_to_find.timetuple())
+    date_time_delta = np.array([(time.mktime(x.timetuple()) - datetime_to_find) for x in datetime_iterable])
+    return int(np.argmin(np.abs(date_time_delta)))

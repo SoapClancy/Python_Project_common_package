@@ -1,5 +1,5 @@
 from matplotlib import pyplot as plt
-from Ploting.fast_plot_Func import creat_fig, show_fig
+from Ploting.utils import creat_fig, show_fig
 from numpy import ndarray
 from typing import Tuple
 from matplotlib import cm, colors

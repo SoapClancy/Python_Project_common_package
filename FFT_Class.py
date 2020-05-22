@@ -9,12 +9,15 @@ from Ploting.fast_plot_Func import *
 from enum import Enum, unique
 from pathlib import Path
 from Writting.utils import put_cached_png_into_a_docx
-from scipy.signal import stft
+from scipy.signal import stft, find_peaks
 from NdarraySubclassing import ComplexNdarray
+from Ploting.utils import BufferedFigureSaver
+from TimeSeries_Class import WindowedTimeSeries
+from Ploting.adjust_Func import adjust_lim_label_ticks
 
 
 class FFTProcessor:
-    __slots__ = ('original_signal', 'sampling_period', 'name')
+    __slots__ = ('original_signal', 'sampling_period', 'name', 'n_fft')
 
     @unique
     class SupportedTransformedPeriod(Enum):
@@ -57,12 +60,16 @@ class FFTProcessor:
         def list_all_convenient_frequency_unit_names(cls) -> tuple:
             return tuple([x.value[1] for x in cls])
 
-    def __init__(self, original_signal: ndarray, *, sampling_period: Union[int, float], name: str):
+    def __init__(self, original_signal: ndarray, *,
+                 sampling_period: Union[int, float],
+                 name: str,
+                 n_fft: int = None):
         if original_signal.ndim > 1:
             raise Exception('Only consider 1-D data')
         self.original_signal = original_signal
         self.sampling_period = sampling_period
         self.name = name
+        self.n_fft = n_fft or self.length_of_signal
 
     def __str__(self):
         return self.name
@@ -79,27 +86,27 @@ class FFTProcessor:
         """
         直接调用FFT函数的结果
         """
-        return fft.fft(self.original_signal)
+        return fft.fft(self.original_signal, self.n_fft)
 
     def _cal_single_sided_amplitude(self) -> ndarray:
         p2 = np.abs(self.cal_naive_direct_fft())
-        if self.length_of_signal % 2 == 0:
-            p1 = p2[:int(self.length_of_signal / 2 + 1)]
+        if self.n_fft % 2 == 0:
+            p1 = p2[:int(self.n_fft / 2 + 1)]
             return p1
         else:
             raise Exception('TODO')
 
     def _cal_single_sided_angle(self) -> ndarray:
         a2 = np.angle(self.cal_naive_direct_fft())
-        if self.length_of_signal % 2 == 0:
-            a1 = a2[:int(self.length_of_signal / 2 + 1)]
+        if self.n_fft % 2 == 0:
+            a1 = a2[:int(self.n_fft / 2 + 1)]
             return a1
         else:
             raise Exception('TODO')
 
     def _cal_single_sided_frequency(self) -> ndarray:
-        if self.length_of_signal % 2 == 0:
-            return self.sampling_frequency * np.arange(0, self.length_of_signal / 2 + 1) / self.length_of_signal
+        if self.n_fft % 2 == 0:
+            return self.sampling_frequency * np.arange(0, self.n_fft / 2 + 1) / self.n_fft
         else:
             raise Exception('TODO')
 
@@ -107,7 +114,7 @@ class FFTProcessor:
         """
         周期轴。根据fft (直接)计算出来的结果self.single_sided_frequency来推算
         """
-        if self.length_of_signal % 2 == 0:
+        if self.n_fft % 2 == 0:
             return (1 / self._cal_single_sided_frequency()) / \
                    self.SupportedTransformedPeriod.get_by_convenient_period_unit_name(period_unit)
         else:
@@ -158,12 +165,18 @@ class FFTProcessor:
             return results.sort_values(by=['magnitude'], ascending=False)
 
     def plot(self,
-             considered_frequency_units: Tuple[str, ...] = None, *,
-             save_as_docx_path: Path = None):
+             considered_frequency_units: Union[str, Tuple[str, ...]] = None, *,
+             overridden_plot_x_lim: Tuple[Union[int, float, None], Union[int, float, None]] = None,
+             save_as_docx_path: Path = None) -> tuple:
         """
         画频谱图和相位图
+        :return: 最后一组fft的frequency和phase的图的buf或者gca
         """
+        return_f, return_p = None, None
+
         full_results_to_be_plot = self.single_sided_frequency_axis_all_supported()
+        if isinstance(considered_frequency_units, str):
+            considered_frequency_units = (considered_frequency_units,)
         considered_frequency_units = \
             considered_frequency_units or self.SupportedTransformedPeriod.list_all_convenient_frequency_unit_names()
         # %% 如果要存成docx，那就准备buffer
@@ -181,61 +194,80 @@ class FFTProcessor:
 
         def plot_single(_this_considered_frequency_unit,
                         x_lim=(None, None)):
+
             x = full_results_to_be_plot[_this_considered_frequency_unit].values
-            buf = stem(x=x,
-                       y=full_results_to_be_plot['magnitude'].values,
-                       x_lim=x_lim,
-                       infer_y_lim_according_to_x_lim=True,
-                       x_label=f'Frequency ({_this_considered_frequency_unit})',
-                       y_label='Magnitude',
-                       save_to_buffer=False)
+            # frequency
+            buf_f = stem(x=x,
+                         y=full_results_to_be_plot['magnitude'].values,
+                         x_lim=x_lim,
+                         infer_y_lim_according_to_x_lim=True,
+                         x_label=f'Frequency ({_this_considered_frequency_unit})',
+                         y_label='Magnitude',
+                         save_to_buffer=False)
             if save_to_buffer:
                 if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0]:
-                    save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0] = buf
+                    save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0] = buf_f
                 else:
                     save_as_docx_buff.setdefault(self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)_2',
-                                                 (buf, None))
+                                                 (buf_f, None))
             # phase
-            buf = stem(x=x,
-                       y=full_results_to_be_plot['phase angle (rad)'].values,
-                       x_lim=x_lim,
-                       x_label=f'Frequency ({_this_considered_frequency_unit})',
-                       y_label='Phase angle (rad)',
-                       save_to_buffer=save_to_buffer)
+            buf_p = stem(x=x,
+                         y=full_results_to_be_plot['phase angle (rad)'].values,
+                         x_lim=x_lim,
+                         x_label=f'Frequency ({_this_considered_frequency_unit})',
+                         y_label='Phase angle (rad)',
+                         save_to_buffer=save_to_buffer)
             if save_to_buffer:
                 if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)'][0]:
-                    save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)'][0] = buf
+                    save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)'][0] = buf_p
                 else:
                     save_as_docx_buff.setdefault(self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)_2',
-                                                 (buf, None))
+                                                 (buf_p, None))
+            return buf_f, buf_p
 
         for this_considered_frequency_unit in considered_frequency_units:
             value = self.SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
                 this_considered_frequency_unit
             )
-            try:
-                _ = value[2][0][0]
-                # 子1
-                plot_single(this_considered_frequency_unit,
-                            value[2][0])
-                # 子2
-                plot_single(this_considered_frequency_unit,
-                            value[2][1])
-            except (IndexError, TypeError) as _:  # 说明'plot_x_lim'要么是()，要么是(x, y)
-                plot_single(this_considered_frequency_unit,
-                            value[2])
+            if overridden_plot_x_lim is None:
+                try:
+                    _ = value[2][0][0]
+                    # 子1
+                    plot_single(this_considered_frequency_unit,
+                                value[2][0])
+                    # 子2
+                    return_f, return_p = plot_single(this_considered_frequency_unit,
+                                                     value[2][1])
+                except (IndexError, TypeError) as _:  # 说明'plot_x_lim'要么是()，要么是(x, y)
+                    return_f, return_p = plot_single(this_considered_frequency_unit,
+                                                     value[2])
+            else:
+                return_f, return_p = plot_single(this_considered_frequency_unit,
+                                                 overridden_plot_x_lim)
         if save_to_buffer:
             put_cached_png_into_a_docx(save_as_docx_buff, save_as_docx_path, 2)
+        return return_f, return_p
 
     def top_n_high(self):
         pass
 
+    def find_peaks_of_fft_frequency(self):
+        """
+        找到频谱图中最高的local maximum
+        """
+        pass
+
 
 class STFTProcessor(FFTProcessor):
-    __slots__ = ('scipy_signal_stft_results',)
+    __slots__ = ('scipy_signal_stft_results', 'original_signal_as_time_series')
 
-    def __init__(self, original_signal: ndarray, *, sampling_period: Union[int, float], name: str):
-        super().__init__(original_signal, sampling_period=sampling_period, name=name)
+    def __init__(self, original_signal_as_time_series, *,
+                 sampling_period: Union[int, float],
+                 name: str):
+        super().__init__(original_signal_as_time_series.values.flatten(),
+                         sampling_period=sampling_period,
+                         name=name)
+        self.original_signal_as_time_series = original_signal_as_time_series
 
     def call_scipy_signal_stft(self, frequency_unit: str = None, time_axis_denominator: int = None, **kwargs):
         """
@@ -259,7 +291,7 @@ class STFTProcessor(FFTProcessor):
             scipy_signal_stft_results[1] /= time_axis_denominator
         return scipy_signal_stft_results
 
-    def plot_scipy_signal_stft(self, call_scipy_signal_stft_args: dict = None):
+    def plot_scipy_signal_stft_aggregated(self, call_scipy_signal_stft_args: dict = None):
         """
         画scipy.signal.stft的结果
         """
@@ -277,3 +309,34 @@ class STFTProcessor(FFTProcessor):
 
         ax = series(tt_angle[2], label='day')
         ax = series(tt_angle[4], ax=ax, label='half day')
+
+    def plot_scipy_signal_stft(self, window_length: datetime.timedelta, window='hann'):
+        window_data = self.original_signal_as_time_series.to_windowed_time_series(
+            window_length=window_length,
+            window=window)  # type: WindowedTimeSeries
+
+        # TEST
+        for test_day in [7, 189]:
+            data = window_data[test_day].values.flatten()
+            this_fft_processor = FFTProcessor(
+                data,
+                sampling_period=window_data[test_day].adjacent_recordings_timedelta.seconds,
+                name=f'Datetime = {window_data[test_day].first_valid_index()}to '
+                     f'{window_data[test_day].last_valid_index()}',
+                n_fft=window_data[test_day].__len__()*1024)
+            f_plot, p_plot = this_fft_processor.plot('1/half day', overridden_plot_x_lim=(0.55, 1.55))
+            f_plot = adjust_lim_label_ticks(f_plot, y_lim=(0, None))
+            # series(data)
+
+        for this_windows_data in window_data:
+            this_windows_data_fft = FFTProcessor(
+                this_windows_data.values.flatten(),
+                sampling_period=this_windows_data.adjacent_recordings_timedelta.seconds,
+                name=f'Datetime = {this_windows_data.first_valid_index()}to '
+                     f'{this_windows_data.last_valid_index()}')
+
+            tt = 1
+        # this_day = self.original_signal_as_time_series.getitem_use_sliding_window(0,
+        #                                                                           window_length=window_length,
+        #                                                                           window=window)
+        BufferedFigureSaver()
