@@ -229,6 +229,7 @@ class FFTProcessor:
             value = self.SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
                 this_considered_frequency_unit
             )
+
             if overridden_plot_x_lim is None:
                 try:
                     _ = value[2][0][0]
