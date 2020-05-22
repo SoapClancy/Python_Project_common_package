@@ -230,6 +230,7 @@ class FFTProcessor:
                 this_considered_frequency_unit
             )
 
+
             if overridden_plot_x_lim is None:
                 try:
                     _ = value[2][0][0]
