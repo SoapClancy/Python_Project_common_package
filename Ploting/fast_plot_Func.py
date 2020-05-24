@@ -57,7 +57,7 @@ def series(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5,
 
 
 @show_fig
-def stem(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5 * 0.618), **kwargs):
+def stem(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5 * 0.618), color='b', **kwargs):
     @creat_fig(figure_size, ax)
     def plot(_ax):
         nonlocal y
@@ -65,9 +65,9 @@ def stem(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5
         kwargs.setdefault('basefmt', ' ')
         if y is None:
             y = np.arange(0, x.size)
-            return _ax.stem(y, x, 'b', use_line_collection=True, **kwargs)
+            return _ax.stem(y, x, color, use_line_collection=True, **kwargs)
         else:
-            return _ax.stem(x, y, 'b', use_line_collection=True, **kwargs)
+            return _ax.stem(x, y, color, use_line_collection=True, **kwargs)
 
     return plot
 

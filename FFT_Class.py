@@ -252,11 +252,72 @@ class FFTProcessor:
     def top_n_high(self):
         pass
 
-    def find_peaks_of_fft_frequency(self):
+    def find_peaks_of_fft_frequency(self, considered_frequency_unit: str, *,
+                                    plot_args: dict = None,
+                                    scipy_signal_find_peaks_args: dict = None,
+                                    base_freq_is_a_peak: bool = True) -> tuple:
         """
         找到频谱图中最高的local maximum
+        :param considered_frequency_unit: 考虑的频率的单位
+
+        :param plot_args: 调用self.plot函数的args，一个字典。key代表除了considered_frequency_units之外的signature。
+        如果是None的话代表不画图，只要不是None，哪怕是空字典也要画图。
+        特殊的，'only_plot_peaks': bool 可以指定是否只画peaks
+        'annotation_for_peak_f_axis_indices': Union[list, tuple] 指定标注哪些peak的indices，比如[0]代表标注第一个peak
+        'annotation_y_offset': Union[list, tuple] 对应'annotation_for_peak_f_axis_indices'
+
+        :param scipy_signal_find_peaks_args: scipy.signal.find_peaks函数的args。
+        如果为None的话就默认是{'height': 0,'prominence': 1}
+
+        :param base_freq_is_a_peak: 默认频谱图的base (0 Hz)分量默认是个peak。
+        因为scipy.signal.find_peaks函数并不能找到这个，所以要手动设置！因为没有负频率，所以函数在0处不连续
+
+        :return 一个tuple，
+        元素0表示fft在peak处的信息array[0]是considered_frequency_unit轴，array[1]是幅值，array[2]是角度
+        元素1是None或者是self.plot的第一个返回值
+        元素2是None或者是self.plot的第二个返回值
         """
-        pass
+        scipy_signal_find_peaks_args = scipy_signal_find_peaks_args or {'height': 0, 'prominence': 1}
+        fft_results = self.single_sided_frequency_axis_all_supported()
+        fft_results = fft_results[[considered_frequency_unit, 'magnitude', 'phase angle (rad)']].values
+        peaks_index, _ = find_peaks(fft_results[:, 1], **scipy_signal_find_peaks_args)
+        # 考虑基频是不是peak
+        if base_freq_is_a_peak:
+            peaks_index = np.concatenate(([0], peaks_index))
+        peak_fft_results = fft_results[peaks_index]
+        # 画图
+        if plot_args is not None:
+            plot_args.update({'considered_frequency_units': considered_frequency_unit})
+            # 是否只画peak而不画fft
+            if plot_args.get('only_plot_peaks'):
+                f_plot, p_plot = None, None
+            else:
+                f_plot, p_plot = self.plot(**plot_args)
+            f_plot = stem(x=peak_fft_results[:, 0],
+                          y=peak_fft_results[:, 1], ax=f_plot, color='r',
+                          x_label=f'Frequency ({considered_frequency_unit})',
+                          y_label='Magnitude'
+                          )
+
+            p_plot = stem(x=peak_fft_results[:, 0],
+                          y=peak_fft_results[:, 2], ax=p_plot, color='r',
+                          x_label=f'Frequency ({considered_frequency_unit})',
+                          y_label='Phase angle (rad)'
+                          )
+            # 指定标准哪些peaks
+            if plot_args.get('annotation_for_peak_f_axis_indices'):
+                annotation_y_offset = plot_args.get('annotation_y_offset')
+                for i, this_peak_idx in enumerate(plot_args.get('annotation_for_peak_f_axis_indices')):
+                    f_plot.annotate(f'f = {peak_fft_results[this_peak_idx, 0]}',
+                                    xy=peak_fft_results[this_peak_idx, [0, 1]],
+                                    xytext=(peak_fft_results[this_peak_idx, 0],
+                                            peak_fft_results[this_peak_idx, 1] + annotation_y_offset[i]),
+                                    arrowprops=dict(facecolor='black', arrowstyle="->"),
+                                    )
+
+            return peak_fft_results, f_plot, p_plot
+        else:
+            return peak_fft_results, None, None
 
 
 class STFTProcessor(FFTProcessor):
@@ -316,7 +377,7 @@ class STFTProcessor(FFTProcessor):
             window_length=window_length,
             window=window)  # type: WindowedTimeSeries
 
-        # TEST
+        """TEST"""
         for test_day in [7, 189]:
             data = window_data[test_day].values.flatten()
             this_fft_processor = FFTProcessor(
@@ -324,7 +385,12 @@ class STFTProcessor(FFTProcessor):
                 sampling_period=window_data[test_day].adjacent_recordings_timedelta.seconds,
                 name=f'Datetime = {window_data[test_day].first_valid_index()}to '
                      f'{window_data[test_day].last_valid_index()}',
-                n_fft=window_data[test_day].__len__()*1024)
+                n_fft=window_data[test_day].__len__() * 1024)
+            this_fft_processor.find_peaks_of_fft_frequency('1/half day',
+                                                           plot_args={'overridden_plot_x_lim': (None, None),
+                                                                      'only_plot_peaks': True,
+                                                                      'annotation_for_peak_f_axis_indices': [1, 2],
+                                                                      'annotation_y_offset': [20] * 2})
             f_plot, p_plot = this_fft_processor.plot('1/half day', overridden_plot_x_lim=(0.55, 1.55))
             f_plot = adjust_lim_label_ticks(f_plot, y_lim=(0, None))
             # series(data)
