@@ -140,10 +140,12 @@ class WindowedTimeSeries(TimeSeries):
         setattr(self, 'window_interval', self._cal_window_interval())
 
     def __repr__(self):
-        return f'Windowed time series from {self.index[0]} to {self.index[-1]}, ' \
-               f'resolution = {self.adjacent_recordings_timedelta}, ' \
-               f'window = {self.window}, ' \
-               f'window_length = {self.window_length}'
+        return super().__repr__() + f'window = {self.window}, ' \
+                                    f'window_length = {self.window_length}, ' \
+                                    f'window_number = {self.__len__()}'
+
+    def __len__(self):
+        return (self.last_valid_index() - self.first_valid_index()) / self.window_length
 
     def _cal_window_interval(self) -> tuple:
         """

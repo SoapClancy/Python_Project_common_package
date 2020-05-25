@@ -14,6 +14,9 @@ from NdarraySubclassing import ComplexNdarray
 from Ploting.utils import BufferedFigureSaver
 from TimeSeries_Class import WindowedTimeSeries
 from Ploting.adjust_Func import adjust_lim_label_ticks
+from inspect import Parameter, Signature
+import inspect
+import math
 
 
 class FFTProcessor:
@@ -262,9 +265,12 @@ class FFTProcessor:
 
         :param plot_args: 调用self.plot函数的args，一个字典。key代表除了considered_frequency_units之外的signature。
         如果是None的话代表不画图，只要不是None，哪怕是空字典也要画图。
-        特殊的，'only_plot_peaks': bool 可以指定是否只画peaks
+        特殊的：
+        'only_plot_peaks': bool 可以指定是否只画peaks
         'annotation_for_peak_f_axis_indices': Union[list, tuple] 指定标注哪些peak的indices，比如[0]代表标注第一个peak
-        'annotation_y_offset': Union[list, tuple] 对应'annotation_for_peak_f_axis_indices'
+        'annotation_y_offset_for_f': Union[list, tuple] 对应'annotation_for_peak_f_axis_indices'，freq
+        'annotation_y_offset_for_p': Union[list, tuple] 对应'annotation_for_peak_f_axis_indices'，phase
+
 
         :param scipy_signal_find_peaks_args: scipy.signal.find_peaks函数的args。
         如果为None的话就默认是{'height': 0,'prominence': 1}
@@ -306,12 +312,21 @@ class FFTProcessor:
                           )
             # 指定标准哪些peaks
             if plot_args.get('annotation_for_peak_f_axis_indices'):
-                annotation_y_offset = plot_args.get('annotation_y_offset')
+                annotation_y_offset_for_f = plot_args.get('annotation_y_offset_for_f')
+                annotation_y_offset_for_p = plot_args.get('annotation_y_offset_for_p')
                 for i, this_peak_idx in enumerate(plot_args.get('annotation_for_peak_f_axis_indices')):
-                    f_plot.annotate(f'f = {peak_fft_results[this_peak_idx, 0]}',
+                    f_plot.annotate(f'f = {peak_fft_results[this_peak_idx, 0]},\n'
+                                    f'magnitude = {peak_fft_results[this_peak_idx, 1]}',
                                     xy=peak_fft_results[this_peak_idx, [0, 1]],
                                     xytext=(peak_fft_results[this_peak_idx, 0],
-                                            peak_fft_results[this_peak_idx, 1] + annotation_y_offset[i]),
+                                            peak_fft_results[this_peak_idx, 1] + annotation_y_offset_for_f[i]),
+                                    arrowprops=dict(facecolor='black', arrowstyle="->"),
+                                    )
+                    p_plot.annotate(f'f = {peak_fft_results[this_peak_idx, 0]},\n'
+                                    f'phase = {peak_fft_results[this_peak_idx, 2]}',
+                                    xy=peak_fft_results[this_peak_idx, [0, 2]],
+                                    xytext=(peak_fft_results[this_peak_idx, 0],
+                                            peak_fft_results[this_peak_idx, 2] + annotation_y_offset_for_p[i]),
                                     arrowprops=dict(facecolor='black', arrowstyle="->"),
                                     )
 
@@ -321,15 +336,72 @@ class FFTProcessor:
 
 
 class STFTProcessor(FFTProcessor):
-    __slots__ = ('scipy_signal_stft_results', 'original_signal_as_time_series')
+    __slots__ = ('original_signal_as_time_series',
+                 'windowed_data',
+                 'stft_results')
 
     def __init__(self, original_signal_as_time_series, *,
                  sampling_period: Union[int, float],
-                 name: str):
+                 name: str, **kwargs):
         super().__init__(original_signal_as_time_series.values.flatten(),
                          sampling_period=sampling_period,
                          name=name)
         self.original_signal_as_time_series = original_signal_as_time_series
+        # 动态生成windowed_data
+        sig = Signature.from_callable(self)
+        __call__params = {key: val for key, val in kwargs.items() if key in sig.parameters}
+        try:
+            self.windowed_data = self(**__call__params)  # type: WindowedTimeSeries
+        except TypeError:
+            self.windowed_data = None
+        self.stft_results = None
+
+    def __call__(self, *, window_length: datetime.timedelta,
+                 window=None):
+        windowed_data = self.original_signal_as_time_series.to_windowed_time_series(
+            window_length=window_length,
+            window=window)  # type: WindowedTimeSeries
+        self.windowed_data = windowed_data
+        return windowed_data
+
+    def do_stft(self, fft_processor_n_fft: int) -> Tuple[FFTProcessor, ...]:
+        if self.windowed_data is None:
+            raise Exception('No windowed data! Run __call__ first!')
+        windowed_data_fft = np.empty((math.ceil(self.windowed_data.__len__()),), dtype=FFTProcessor)  # 也许用ndarray比[]快
+        for i, this_windowed_data in enumerate(self.windowed_data):
+            this_windows_data_fft = FFTProcessor(
+                this_windowed_data.values.flatten(),
+                sampling_period=this_windowed_data.adjacent_recordings_timedelta.seconds,
+                name=f'Datetime = {this_windowed_data.first_valid_index()} to '
+                     f'{this_windowed_data.last_valid_index()}',
+                n_fft=fft_processor_n_fft)
+            windowed_data_fft[i] = this_windows_data_fft
+        self.stft_results = tuple(windowed_data_fft)
+        return self.stft_results
+
+    def find_peaks_of_fft_frequency(self, considered_frequency_unit: str, *,
+                                    considered_window_index: Union[tuple, range] = (),
+                                    plot_args: dict = None,
+                                    scipy_signal_find_peaks_args: dict = None,
+                                    base_freq_is_a_peak: bool = True):
+        """
+        :return: (!!!只有plot_args的时候才有数值return)
+        第一维代表window的index，第二维度是第几个peak的频率分量，第三维度是(频率，幅值，角度)
+        """
+        sig = inspect.signature(FFTProcessor.find_peaks_of_fft_frequency)
+        pass_args = {key: val for key, val in locals().items() if (key in sig.parameters and key != 'self')}
+        if self.stft_results is None:
+            raise Exception("Should call do_stft method at first")
+        peaks_of_fft_results = np.empty((considered_window_index.__len__(),), dtype=FFTProcessor)  # 也许用ndarray比[]快
+        for i, this_window_index in enumerate(considered_window_index):
+            temp = self.stft_results[this_window_index].find_peaks_of_fft_frequency(**pass_args)
+            peaks_of_fft_results[i] = temp
+        # 提取数值结果
+        numeric_only = []
+        for i in peaks_of_fft_results:
+            numeric_only.append(i[0])
+        numeric_only = np.array(numeric_only)
+        return numeric_only  # 第一维代表window的index，第二维度是第几个peak的频率分量，第三维度是(频率，幅值，角度)
 
     def call_scipy_signal_stft(self, frequency_unit: str = None, time_axis_denominator: int = None, **kwargs):
         """
@@ -371,39 +443,3 @@ class STFTProcessor(FFTProcessor):
 
         ax = series(tt_angle[2], label='day')
         ax = series(tt_angle[4], ax=ax, label='half day')
-
-    def plot_scipy_signal_stft(self, window_length: datetime.timedelta, window='hann'):
-        window_data = self.original_signal_as_time_series.to_windowed_time_series(
-            window_length=window_length,
-            window=window)  # type: WindowedTimeSeries
-
-        """TEST"""
-        for test_day in [7, 189]:
-            data = window_data[test_day].values.flatten()
-            this_fft_processor = FFTProcessor(
-                data,
-                sampling_period=window_data[test_day].adjacent_recordings_timedelta.seconds,
-                name=f'Datetime = {window_data[test_day].first_valid_index()}to '
-                     f'{window_data[test_day].last_valid_index()}',
-                n_fft=window_data[test_day].__len__() * 1024)
-            this_fft_processor.find_peaks_of_fft_frequency('1/half day',
-                                                           plot_args={'overridden_plot_x_lim': (None, None),
-                                                                      'only_plot_peaks': True,
-                                                                      'annotation_for_peak_f_axis_indices': [1, 2],
-                                                                      'annotation_y_offset': [20] * 2})
-            f_plot, p_plot = this_fft_processor.plot('1/half day', overridden_plot_x_lim=(0.55, 1.55))
-            f_plot = adjust_lim_label_ticks(f_plot, y_lim=(0, None))
-            # series(data)
-
-        for this_windows_data in window_data:
-            this_windows_data_fft = FFTProcessor(
-                this_windows_data.values.flatten(),
-                sampling_period=this_windows_data.adjacent_recordings_timedelta.seconds,
-                name=f'Datetime = {this_windows_data.first_valid_index()}to '
-                     f'{this_windows_data.last_valid_index()}')
-
-            tt = 1
-        # this_day = self.original_signal_as_time_series.getitem_use_sliding_window(0,
-        #                                                                           window_length=window_length,
-        #                                                                           window=window)
-        BufferedFigureSaver()
