@@ -52,7 +52,7 @@ def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
     merge_new_time_series_df_datetime_df = merge_existing_df_datetime_df(new_time_series_df)
 
     # new_time_series_df精度比main_time_series_df低的情况
-    if (new_time_series_df.index[1] - new_time_series_df.index[0]) > \
+    if (new_time_series_df.index[1] - new_time_series_df.index[0]) >= \
             (main_time_series_df.index[1] - main_time_series_df.index[0]):
         merge_main_time_series_df_new_time_series_df = pd.merge(merge_main_time_series_df_datetime_df,
                                                                 merge_new_time_series_df_datetime_df,
