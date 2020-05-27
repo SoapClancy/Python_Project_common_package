@@ -4,7 +4,7 @@ from numpy import ndarray, complex
 from pandas import DataFrame
 from scipy import fft
 from datetime import timedelta
-from typing import Union, Tuple
+from typing import Union, Tuple, Callable
 from Ploting.fast_plot_Func import *
 from enum import Enum, unique
 from pathlib import Path
@@ -85,14 +85,14 @@ class FFTProcessor:
     def length_of_signal(self) -> int:
         return np.size(self.original_signal)
 
-    def cal_naive_direct_fft(self) -> ndarray:
+    def cal_scipy_fft_fft(self) -> ndarray:
         """
         直接调用FFT函数的结果
         """
         return fft.fft(self.original_signal, self.n_fft)
 
     def _cal_single_sided_amplitude(self) -> ndarray:
-        p2 = np.abs(self.cal_naive_direct_fft())
+        p2 = np.abs(self.cal_scipy_fft_fft())
         if self.n_fft % 2 == 0:
             p1 = p2[:int(self.n_fft / 2 + 1)]
             return p1
@@ -100,7 +100,7 @@ class FFTProcessor:
             raise Exception('TODO')
 
     def _cal_single_sided_angle(self) -> ndarray:
-        a2 = np.angle(self.cal_naive_direct_fft())
+        a2 = np.angle(self.cal_scipy_fft_fft())
         if self.n_fft % 2 == 0:
             a1 = a2[:int(self.n_fft / 2 + 1)]
             return a1
@@ -280,17 +280,19 @@ class FFTProcessor:
 
         :return 一个tuple，
         元素0表示fft在peak处的信息array[0]是considered_frequency_unit轴，array[1]是幅值，array[2]是角度
+        元素1代表peaks_index
         元素1是None或者是self.plot的第一个返回值
         元素2是None或者是self.plot的第二个返回值
         """
         scipy_signal_find_peaks_args = scipy_signal_find_peaks_args or {'height': 0, 'prominence': 1}
         fft_results = self.single_sided_frequency_axis_all_supported()
-        fft_results = fft_results[[considered_frequency_unit, 'magnitude', 'phase angle (rad)']].values
-        peaks_index, _ = find_peaks(fft_results[:, 1], **scipy_signal_find_peaks_args)
+        fft_results = fft_results[[considered_frequency_unit, 'magnitude', 'phase angle (rad)']]
+        peaks_index, _ = find_peaks(fft_results.values[:, 1], **scipy_signal_find_peaks_args)
         # 考虑基频是不是peak
         if base_freq_is_a_peak:
             peaks_index = np.concatenate(([0], peaks_index))
-        peak_fft_results = fft_results[peaks_index]
+        peak_fft_results = fft_results.iloc[peaks_index, :]
+        peak_fft_results_values = peak_fft_results.values
         # 画图
         if plot_args is not None:
             plot_args.update({'considered_frequency_units': considered_frequency_unit})
@@ -298,15 +300,17 @@ class FFTProcessor:
             if plot_args.get('only_plot_peaks'):
                 f_plot, p_plot = None, None
             else:
-                f_plot, p_plot = self.plot(**plot_args)
-            f_plot = stem(x=peak_fft_results[:, 0],
-                          y=peak_fft_results[:, 1], ax=f_plot, color='r',
+                passed_args = {key: val for key, val in plot_args.items()
+                               if key in inspect.signature(self.plot).parameters}
+                f_plot, p_plot = self.plot(**passed_args)
+            f_plot = stem(x=peak_fft_results_values[:, 0],
+                          y=peak_fft_results_values[:, 1], ax=f_plot, color='r',
                           x_label=f'Frequency ({considered_frequency_unit})',
                           y_label='Magnitude'
                           )
 
-            p_plot = stem(x=peak_fft_results[:, 0],
-                          y=peak_fft_results[:, 2], ax=p_plot, color='r',
+            p_plot = stem(x=peak_fft_results_values[:, 0],
+                          y=peak_fft_results_values[:, 2], ax=p_plot, color='r',
                           x_label=f'Frequency ({considered_frequency_unit})',
                           y_label='Phase angle (rad)'
                           )
@@ -315,24 +319,105 @@ class FFTProcessor:
                 annotation_y_offset_for_f = plot_args.get('annotation_y_offset_for_f')
                 annotation_y_offset_for_p = plot_args.get('annotation_y_offset_for_p')
                 for i, this_peak_idx in enumerate(plot_args.get('annotation_for_peak_f_axis_indices')):
-                    f_plot.annotate(f'f = {peak_fft_results[this_peak_idx, 0]},\n'
-                                    f'magnitude = {peak_fft_results[this_peak_idx, 1]}',
-                                    xy=peak_fft_results[this_peak_idx, [0, 1]],
-                                    xytext=(peak_fft_results[this_peak_idx, 0],
-                                            peak_fft_results[this_peak_idx, 1] + annotation_y_offset_for_f[i]),
+                    f_plot.annotate(f'f = {peak_fft_results_values[this_peak_idx, 0]},\n'
+                                    f'magnitude = {peak_fft_results_values[this_peak_idx, 1]}',
+                                    xy=peak_fft_results_values[this_peak_idx, [0, 1]],
+                                    xytext=(peak_fft_results_values[this_peak_idx, 0],
+                                            peak_fft_results_values[this_peak_idx, 1] + annotation_y_offset_for_f[i]),
                                     arrowprops=dict(facecolor='black', arrowstyle="->"),
                                     )
-                    p_plot.annotate(f'f = {peak_fft_results[this_peak_idx, 0]},\n'
-                                    f'phase = {peak_fft_results[this_peak_idx, 2]}',
-                                    xy=peak_fft_results[this_peak_idx, [0, 2]],
-                                    xytext=(peak_fft_results[this_peak_idx, 0],
-                                            peak_fft_results[this_peak_idx, 2] + annotation_y_offset_for_p[i]),
+                    p_plot.annotate(f'f = {peak_fft_results_values[this_peak_idx, 0]},\n'
+                                    f'phase = {peak_fft_results_values[this_peak_idx, 2]}',
+                                    xy=peak_fft_results_values[this_peak_idx, [0, 2]],
+                                    xytext=(peak_fft_results_values[this_peak_idx, 0],
+                                            peak_fft_results_values[this_peak_idx, 2] + annotation_y_offset_for_p[i]),
                                     arrowprops=dict(facecolor='black', arrowstyle="->"),
                                     )
 
-            return peak_fft_results, f_plot, p_plot
+            return peak_fft_results, peaks_index, f_plot, p_plot
         else:
-            return peak_fft_results, None, None
+            return peak_fft_results, peaks_index, None, None
+
+
+class FourierSeriesProcessorMeta(type):
+
+    def __new__(mcs, clsname, bases, clsdict):
+        if clsname in ('APFormFourierSeriesProcessor', 'SCFormFourierSeriesProcessor'):
+            sig = inspect.Signature([Parameter(this_arg, Parameter.KEYWORD_ONLY, default=None)
+                                     for this_arg in list(clsdict['__slots__']) + list(bases[0].__slots__)])
+            clsdict['__init__sig'] = sig
+        clsobj = super().__new__(mcs, clsname, bases, clsdict)
+        return clsobj
+
+    def change_to_another_form(cls):
+        pass
+
+
+class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
+    """
+    'frequency'的单位是Hz
+    'x_value'是指时域的x轴的坐标，单位是秒
+    """
+    __slots__ = ('frequency', 'x_value')
+
+    def __init__(self, *args, **kwargs):
+        bound = self.__getattribute__('__init__sig').bind(*args, **kwargs)
+        for name, val in bound.arguments.items():
+            setattr(self, name, val or np.full(self.frequency.shape, np.nan))
+
+    @staticmethod
+    def cal_usable_x_value(x_value) -> ndarray:
+        if isinstance(x_value, ndarray):
+            return x_value
+        elif isinstance(x_value, pd.DatetimeIndex):
+            seconds_ndarray = np.array(list(map(lambda x: (x - x_value[0]).seconds, x_value)))
+            return seconds_ndarray
+        else:
+            raise TypeError("Unsupported x_value type, should be pd.DatetimeIndex or ndarray")
+
+    def _form_fourier_series_matrix(self):
+        pass
+
+
+class APFormFourierSeriesProcessor(FourierSeriesProcessor):
+    __slots__ = ('magnitude', 'phase')
+
+    def _form_callable_component_funcs(self) -> Tuple[Callable, ...]:
+        component_func = []
+        for i in range(self.frequency.size):
+            this_magnitude = float(self.magnitude[i])
+            this_frequency = float(self.frequency[i])
+            this_phase = float(self.phase[i])
+            component_func.append(lambda x: this_magnitude * np.cos(2 * np.pi * this_frequency * x - this_phase))
+        return tuple(component_func)
+
+    def __call__(self, x_value: Union[pd.DatetimeIndex, ndarray]):
+        x_value = self.cal_usable_x_value(x_value)
+        self._form_callable_component_funcs()
+        tt = 1
+
+
+class SCFormFourierSeriesProcessor(FourierSeriesProcessor):
+    __slots__ = ('coefficient',)
+
+
+class InverseFFTProcessorAPForm(APFormFourierSeriesProcessor):
+    __slots__ = ('fft_results',)
+
+    """
+    if fft_results.shape[0] % 2 == 0:
+        raise NotImplementedError("只支持原信号样本数是偶数的信号，即：single sided的fft结果是奇数")
+    # 如果fft_results是二维的，那么第0列就是幅值，第1列就是角度（弧度制）
+    if (fft_results.ndim == 2) and isinstance(fft_results, ndarray):
+        self.fft_results = fft_results[:, 0] * np.exp(1j * fft_results[:, 1])
+    elif (fft_results.ndim == 1) and isinstance(fft_results, ComplexNdarray):
+        self.fft_results = fft_results
+    else:
+        raise Exception("Unsupported data type")
+    if fft_results_is_single_sided:
+        self.fft_results = np.concatenate((self.fft_results,
+                                           np.conj(self.fft_results[-2:0:-1])))
+    """
 
 
 class STFTProcessor(FFTProcessor):

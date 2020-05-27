@@ -10,7 +10,6 @@ class ComplexNdarray(np.ndarray):
         return obj
 
     def __array_finalize__(self, obj):
-        # see InfoArray.__array_finalize__ for comments
         if obj is None:
             return
         pass

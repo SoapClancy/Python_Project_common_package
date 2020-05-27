@@ -120,3 +120,5 @@ class Stock(Structure):
 
 if __name__ == '__main__':
     tt = Stock(shares=1)
+    Stock.__init__(shares=1)
+
