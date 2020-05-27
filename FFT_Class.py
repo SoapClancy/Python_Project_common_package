@@ -17,6 +17,7 @@ from Ploting.adjust_Func import adjust_lim_label_ticks
 from inspect import Parameter, Signature
 import inspect
 import math
+from Data_Preprocessing.utils import scale_to_minus_plus_one
 
 
 class FFTProcessor:
@@ -375,8 +376,19 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
         else:
             raise TypeError("Unsupported x_value type, should be pd.DatetimeIndex or ndarray")
 
-    def _form_fourier_series_matrix(self):
+    def _form_callable_component_funcs(self) -> Tuple[Callable, ...]:
         pass
+
+    def __call__(self, x_value: Union[pd.DatetimeIndex, ndarray], scale_to_minus_plus_one_flag=False):
+        x_value = self.cal_usable_x_value(x_value)
+        callable_component_funcs = self._form_callable_component_funcs()
+        results = []
+        for this_func in callable_component_funcs:
+            results.append(this_func(x_value))
+        results = np.sum(np.array(results), axis=0)
+        if scale_to_minus_plus_one_flag:
+            results = scale_to_minus_plus_one(results)
+        return results
 
 
 class APFormFourierSeriesProcessor(FourierSeriesProcessor):
@@ -391,33 +403,13 @@ class APFormFourierSeriesProcessor(FourierSeriesProcessor):
             component_func.append(lambda x: this_magnitude * np.cos(2 * np.pi * this_frequency * x - this_phase))
         return tuple(component_func)
 
-    def __call__(self, x_value: Union[pd.DatetimeIndex, ndarray]):
-        x_value = self.cal_usable_x_value(x_value)
-        self._form_callable_component_funcs()
-        tt = 1
-
 
 class SCFormFourierSeriesProcessor(FourierSeriesProcessor):
     __slots__ = ('coefficient',)
 
 
-class InverseFFTProcessorAPForm(APFormFourierSeriesProcessor):
-    __slots__ = ('fft_results',)
-
-    """
-    if fft_results.shape[0] % 2 == 0:
-        raise NotImplementedError("只支持原信号样本数是偶数的信号，即：single sided的fft结果是奇数")
-    # 如果fft_results是二维的，那么第0列就是幅值，第1列就是角度（弧度制）
-    if (fft_results.ndim == 2) and isinstance(fft_results, ndarray):
-        self.fft_results = fft_results[:, 0] * np.exp(1j * fft_results[:, 1])
-    elif (fft_results.ndim == 1) and isinstance(fft_results, ComplexNdarray):
-        self.fft_results = fft_results
-    else:
-        raise Exception("Unsupported data type")
-    if fft_results_is_single_sided:
-        self.fft_results = np.concatenate((self.fft_results,
-                                           np.conj(self.fft_results[-2:0:-1])))
-    """
+class LASSOFFT:
+    pass
 
 
 class STFTProcessor(FFTProcessor):
@@ -484,8 +476,25 @@ class STFTProcessor(FFTProcessor):
         # 提取数值结果
         numeric_only = []
         for i in peaks_of_fft_results:
-            numeric_only.append(i[0])
+            numeric_only.append(i[0].values)
         numeric_only = np.array(numeric_only)
+        """
+        DEBUG
+        """
+        tt = numeric_only[:, 1, 1]
+        series(tt, title='1st peak magnitude change')
+        tt = numeric_only[:, 1, 0]
+        series(tt, title='1st peak frequency change')
+        tt = numeric_only[:, 1, 2]
+        series(tt, title='1st peak phase change')
+
+        tt = numeric_only[:, 2, 1]
+        series(tt, title='2nd peak magnitude change')
+        tt = numeric_only[:, 2, 0]
+        series(tt, title='2nd peak frequency change')
+        tt = numeric_only[:, 2, 2]
+        series(tt, title='2nd peak phase change')
+
         return numeric_only  # 第一维代表window的index，第二维度是第几个peak的频率分量，第三维度是(频率，幅值，角度)
 
     def call_scipy_signal_stft(self, frequency_unit: str = None, time_axis_denominator: int = None, **kwargs):

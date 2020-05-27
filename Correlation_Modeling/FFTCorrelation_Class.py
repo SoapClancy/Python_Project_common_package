@@ -1,9 +1,10 @@
-from FFT_Class import FFTProcessor, APFormFourierSeriesProcessor, FourierSeriesProcessor
+from FFT_Class import FFTProcessor, APFormFourierSeriesProcessor, FourierSeriesProcessor, LASSOFFT
 from TimeSeries_Class import merge_two_time_series_df, TimeSeries, WindowedTimeSeries
 import pandas as pd
 from numpy import ndarray
 from Ploting.fast_plot_Func import *
 from typing import Tuple
+from .utils import BivariateCorrelationAnalyser
 
 
 class FFTCorrelationMeta(type):
@@ -131,7 +132,7 @@ class BivariateFFTCorrelation(FFTCorrelation):
                 re_constructed_time_domain = APFormFourierSeriesProcessor(frequency=np.array([hz_f]),
                                                                           magnitude=np.array([magnitude]),
                                                                           phase=np.array([phase]))
-                re_constructed_time_domain = re_constructed_time_domain(self.time_series.index)
+                re_constructed_time_domain = re_constructed_time_domain(self.time_series.index, False)
                 temp[key] = (hz_f,
                              fft_results.values[0],
                              magnitude,
@@ -143,10 +144,20 @@ class BivariateFFTCorrelation(FFTCorrelation):
         vice_ifft = one_ifft(self.vice_fft, vice_considered_peaks_index, self.vice_found_peaks[1])
         return main_ifft, vice_ifft
 
-    def corr_between_pairwise_peaks_f(self) -> ndarray:
-        pass
+    def corr_between_pairwise_peaks_f(self) -> dict:
+        pairwise_correlation = {key: pd.DataFrame(columns=list(self.main_ifft.keys()),
+                                                  index=list(self.vice_ifft.keys())) for key in self.correlation_func}
+        for key in pairwise_correlation:
+            for main_ifft_key in self.main_ifft.keys():
+                for vice_ifft_key in self.vice_ifft.keys():
+                    corr = BivariateCorrelationAnalyser(self.main_ifft[main_ifft_key][-1],
+                                                        self.vice_ifft[vice_ifft_key][-1])
+                    one_result = corr(key)[0]
+                    # 将一次pairwise的计算写入pairwise_correlation中key对应的value（即：一个pd.DataFrame）
+                    pairwise_correlation[key].loc[vice_ifft_key, main_ifft_key] = one_result
+        return pairwise_correlation
 
-    def corr_between_main_peaks_f_and_vice(self) -> ndarray:
+    def corr_between_main_peaks_f_and_vice(self) -> dict:
         pass
 
     def corr_between_combined_main_peaks_f_and_vice(self) -> ndarray:
