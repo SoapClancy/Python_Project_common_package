@@ -42,8 +42,9 @@ def put_png_file_into_a_docx(png_file_in_a_dict: dict, docx_file_path: Union[str
 
 
 def put_all_png_in_a_path_into_a_docx(path_: Union[str, Path], docx_file_path: Union[str, Path]):
-    files = list_all_specific_format_files_in_a_path(path_, 'png')
-    put_png_file_into_a_docx(files, docx_file_path)
+    files = list_all_specific_format_files_in_a_path(path_, 'png', '')
+    to_do_ = {f'{i}': (x,) for i, x in enumerate(files)}
+    put_png_file_into_a_docx(to_do_, docx_file_path)
 
 
 def put_cached_png_into_a_docx(cached_png: dict,

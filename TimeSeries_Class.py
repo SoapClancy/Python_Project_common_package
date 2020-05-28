@@ -13,6 +13,7 @@ import copy
 import isoweek
 from Time_Processing.datetime_utils import find_nearest_datetime_idx_in_datetime_iterable
 from scipy.signal import get_window
+import re
 
 
 def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
@@ -112,6 +113,13 @@ class TimeSeries(pd.DataFrame):
         return self.index[1] - self.index[0]
 
     @property
+    def sampling_period(self) -> int:
+        """
+        单位是秒
+        """
+        return self.adjacent_recordings_timedelta.seconds
+
+    @property
     def number_of_recordings_per_day(self):
         number = int(24 * 3600 / self.adjacent_recordings_timedelta.seconds)
         if number == 0:
@@ -127,6 +135,49 @@ class TimeSeries(pd.DataFrame):
 
     def to_windowed_time_series(self, *, window_length: datetime.timedelta, window: str = None):
         return WindowedTimeSeries(self, window_length=window_length, window=window)
+
+    def reconstruct_using_ift(self, *,
+                              n_fft: int = None,
+                              find_peaks_of_fft_frequency_args: dict,
+                              considered_peaks_index: Union[list, tuple],
+                              use_lasso_fft_to_re_estimate: bool = True,
+                              scale_to_minus_plus_one_flag: bool = False,
+                              do_plotting: bool = False
+                              ) -> tuple:
+        from FFT_Class import FFTProcessor, APFormFourierSeriesProcessor, LASSOFFTProcessor
+
+        if self.shape[1] > 1:
+            raise NotImplementedError("目前只支持一维数据")
+        fft_processor = FFTProcessor(self.values.flatten(),
+                                     sampling_period=self.adjacent_recordings_timedelta.seconds,
+                                     name='time series',
+                                     n_fft=n_fft)
+        found_peaks = fft_processor.find_peaks_of_fft_frequency(**find_peaks_of_fft_frequency_args)
+        if not use_lasso_fft_to_re_estimate:
+            ift_processor = APFormFourierSeriesProcessor.init_using_fft_found_peaks(found_peaks,
+                                                                                    considered_peaks_index)
+            ift_reconstruct, ift_reconstruct_raw = ift_processor(
+                self.index,
+                scale_to_minus_plus_one_flag=scale_to_minus_plus_one_flag,
+                return_raw=True)
+        else:
+            # 用lasso fft重新估计参数
+            found_peaks_frequency = found_peaks[0].index[considered_peaks_index].values
+            lasso_fft_processor = LASSOFFTProcessor(found_peaks_frequency,
+                                                    target=self)
+            # lasso_fft_processor = LASSOFFTProcessor(np.concatenate((np.array([0]), 1/np.arange(0.1, 3600))),
+            #                                         target=self)
+            fitting = lasso_fft_processor.do_lasso_fitting(alpha=0.0001,
+                                                           max_iter=10_000,
+                                                           tol=1e-10)
+            ift_reconstruct, ift_reconstruct_raw = fitting[1], None
+        if do_plotting:
+            title = 'Day: ' + re.findall(r'\d{4}-\d{1,2}-\d{1,2}', str(self.first_valid_index()))[0]
+            ax = time_series(x=self.index, y=self.values.flatten(), label='original')
+            ax = time_series(x=self.index, y=ift_reconstruct, ax=ax, label='reconstructed', title=title)
+        else:
+            ax = None
+        return ift_reconstruct, ift_reconstruct_raw, ax
 
 
 class WindowedTimeSeries(TimeSeries):

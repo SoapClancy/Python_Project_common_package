@@ -4,20 +4,26 @@ from numpy import ndarray, complex
 from pandas import DataFrame
 from scipy import fft
 from datetime import timedelta
-from typing import Union, Tuple, Callable
+from typing import Union, Tuple, Callable, Any
 from Ploting.fast_plot_Func import *
 from enum import Enum, unique
 from pathlib import Path
 from Writting.utils import put_cached_png_into_a_docx
 from scipy.signal import stft, find_peaks
-from NdarraySubclassing import ComplexNdarray
+from NdarraySubclassing import ComplexNdarray, OneDimensionNdarray
 from Ploting.utils import BufferedFigureSaver
-from TimeSeries_Class import WindowedTimeSeries
+from TimeSeries_Class import WindowedTimeSeries, TimeSeries
 from Ploting.adjust_Func import adjust_lim_label_ticks
 from inspect import Parameter, Signature
 import inspect
 import math
 from Data_Preprocessing.utils import scale_to_minus_plus_one
+import copy
+from sklearn.linear_model import Lasso
+import warnings
+
+
+USE_DEGREE_FOR_PLOT = True
 
 
 class FFTProcessor:
@@ -203,6 +209,7 @@ class FFTProcessor:
             # frequency
             buf_f = stem(x=x,
                          y=full_results_to_be_plot['magnitude'].values,
+                         ax=None,
                          x_lim=x_lim,
                          infer_y_lim_according_to_x_lim=True,
                          x_label=f'Frequency ({_this_considered_frequency_unit})',
@@ -216,10 +223,12 @@ class FFTProcessor:
                                                  (buf_f, None))
             # phase
             buf_p = stem(x=x,
-                         y=full_results_to_be_plot['phase angle (rad)'].values,
+                         y=full_results_to_be_plot['phase angle (rad)'].values if not USE_DEGREE_FOR_PLOT
+                         else full_results_to_be_plot['phase angle (rad)'] * 180 / float(np.pi),
+                         ax=None,
                          x_lim=x_lim,
                          x_label=f'Frequency ({_this_considered_frequency_unit})',
-                         y_label='Phase angle (rad)',
+                         y_label=f"Phase angle ({'rad' if not USE_DEGREE_FOR_PLOT else 'degree'})",
                          save_to_buffer=save_to_buffer)
             if save_to_buffer:
                 if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)'][0]:
@@ -252,9 +261,6 @@ class FFTProcessor:
         if save_to_buffer:
             put_cached_png_into_a_docx(save_as_docx_buff, save_as_docx_path, 2)
         return return_f, return_p
-
-    def top_n_high(self):
-        pass
 
     def find_peaks_of_fft_frequency(self, considered_frequency_unit: str, *,
                                     plot_args: dict = None,
@@ -305,15 +311,18 @@ class FFTProcessor:
                                if key in inspect.signature(self.plot).parameters}
                 f_plot, p_plot = self.plot(**passed_args)
             f_plot = stem(x=peak_fft_results_values[:, 0],
-                          y=peak_fft_results_values[:, 1], ax=f_plot, color='r',
+                          y=peak_fft_results_values[:, 1],
+                          ax=f_plot, color='r',
                           x_label=f'Frequency ({considered_frequency_unit})',
                           y_label='Magnitude'
                           )
 
             p_plot = stem(x=peak_fft_results_values[:, 0],
-                          y=peak_fft_results_values[:, 2], ax=p_plot, color='r',
+                          y=peak_fft_results_values[:, 2] if not USE_DEGREE_FOR_PLOT
+                          else peak_fft_results_values[:, 2] * 180 / float(np.pi),
+                          ax=p_plot, color='r',
                           x_label=f'Frequency ({considered_frequency_unit})',
-                          y_label='Phase angle (rad)'
+                          y_label=f"Phase angle ({'rad' if not USE_DEGREE_FOR_PLOT else 'degree'})",
                           )
             # 指定标准哪些peaks
             if plot_args.get('annotation_for_peak_f_axis_indices'):
@@ -359,12 +368,18 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
     'frequency'的单位是Hz
     'x_value'是指时域的x轴的坐标，单位是秒
     """
-    __slots__ = ('frequency', 'x_value')
+    __slots__ = ('frequency',)
 
     def __init__(self, *args, **kwargs):
         bound = self.__getattribute__('__init__sig').bind(*args, **kwargs)
         for name, val in bound.arguments.items():
-            setattr(self, name, val or np.full(self.frequency.shape, np.nan))
+            if val is not None:
+                if val.ndim > 1:
+                    raise ValueError("傅里叶级数的属性必须通过ndim==1的ndarray初始化")
+                setattr(self, name, val)
+        for this_attr in self.__getattribute__('__init__sig').parameters:
+            if this_attr not in bound.arguments:
+                setattr(self, this_attr, np.full(self.frequency.shape, 1.0))
 
     @staticmethod
     def cal_usable_x_value(x_value) -> ndarray:
@@ -379,37 +394,103 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
     def _form_callable_component_funcs(self) -> Tuple[Callable, ...]:
         pass
 
-    def __call__(self, x_value: Union[pd.DatetimeIndex, ndarray], scale_to_minus_plus_one_flag=False):
+    def __call__(self, x_value: Union[pd.DatetimeIndex, ndarray],
+                 scale_to_minus_plus_one_flag=False, *,
+                 return_raw=False):
         x_value = self.cal_usable_x_value(x_value)
         callable_component_funcs = self._form_callable_component_funcs()
         results = []
         for this_func in callable_component_funcs:
             results.append(this_func(x_value))
+        raw_results = np.array(results)
         results = np.sum(np.array(results), axis=0)
         if scale_to_minus_plus_one_flag:
             results = scale_to_minus_plus_one(results)
-        return results
+        if not return_raw:
+            return results
+        else:
+            return results, raw_results.T
 
 
 class APFormFourierSeriesProcessor(FourierSeriesProcessor):
     __slots__ = ('magnitude', 'phase')
 
     def _form_callable_component_funcs(self) -> Tuple[Callable, ...]:
-        component_func = []
+        component_funcs = []
         for i in range(self.frequency.size):
             this_magnitude = float(self.magnitude[i])
             this_frequency = float(self.frequency[i])
             this_phase = float(self.phase[i])
-            component_func.append(lambda x: this_magnitude * np.cos(2 * np.pi * this_frequency * x - this_phase))
-        return tuple(component_func)
+            # TODO
+            # 又是python copy的问题，
+            # component_funcs.append(lambda x: this_magnitude * np.cos(2 * np.pi * this_frequency * x - this_phase))
+            # 会使得component_funcs中每个函数的调用结果都一样。因为深层的函数内部的参数的指向一样
+            # 解决方法：转成str类，作为source code，用的时候在用eval执行
+            source_code = f"lambda x: {this_magnitude} * np.cos(2 * np.pi * {this_frequency} * x - {this_phase})"
+            component_funcs.append(eval(source_code))
+        return tuple(component_funcs)
+
+    @classmethod
+    def init_using_fft_found_peaks(cls,
+                                   fft_found_peaks: Tuple[pd.DataFrame, ndarray, Union[None, Any], Union[None, Any]],
+                                   considered_peaks_index: Union[list, tuple]):
+        frequency = fft_found_peaks[0].index[considered_peaks_index].values
+        magnitude = fft_found_peaks[0]['magnitude'].values[considered_peaks_index]
+        phase = fft_found_peaks[0]['phase angle (rad)'].values[considered_peaks_index]
+        self = APFormFourierSeriesProcessor(frequency=frequency, magnitude=magnitude, phase=phase)
+        return self
 
 
 class SCFormFourierSeriesProcessor(FourierSeriesProcessor):
-    __slots__ = ('coefficient',)
+    __slots__ = ('coefficient_a', 'coefficient_b')
+
+    def _form_callable_component_funcs(self) -> Tuple[Callable, ...]:
+        component_funcs = []
+        # 注意，这个形式的cos和sin是两个函数分别不同的参数，所以矩阵的行数是APFormFourierSeriesProcessor的两倍
+        # 偶数列代表cos，奇数列代表sin
+        for i in range(self.frequency.size):
+            this_frequency = float(self.frequency[i])
+            this_coefficient_a = float(self.coefficient_a[i])
+            this_coefficient_b = float(self.coefficient_b[i])
+            source_code = f"lambda x: {this_coefficient_a} * np.cos(2 * np.pi * {this_frequency} * x)"
+            component_funcs.append(eval(source_code))  # 偶数列代表cos
+            source_code = f"lambda x: {this_coefficient_b} * np.sin(2 * np.pi * {this_frequency} * x)"
+            component_funcs.append(eval(source_code))  # 奇数列代表sin
+
+        return tuple(component_funcs)
 
 
-class LASSOFFT:
-    pass
+class LASSOFFTProcessor:
+    __slots__ = ('frequency', 'target')
+
+    def __init__(self, frequency: ndarray, *, target: TimeSeries):
+        self.frequency = OneDimensionNdarray(frequency)
+        if not isinstance(target, TimeSeries):
+            raise ValueError("'target' attribute in LASSOFFTProcessor object must be an instance of TimeSeries class")
+        self.target = target
+
+    def __form_x_matrix(self) -> ndarray:
+        """
+        生成SCFormFourierSeriesProcessor对象，默认coefficient全是1，调用__call__方法生成对应矩阵
+        :return ：偶数列代表cos, 奇数列代表sin
+        """
+        if not np.isclose(np.min(self.frequency), 0, rtol=1.e-16, atol=1.e-16):
+            warnings.warn("要用到LASSO fitting，那么必须要包含base分量，已经自动添加", UserWarning)
+        self.frequency = np.concatenate(([0], self.frequency))
+        sc_form_fourier_series_processor = SCFormFourierSeriesProcessor(
+            frequency=self.frequency
+        )
+        _, x_matrix = sc_form_fourier_series_processor(self.target.index, return_raw=True)
+        return x_matrix
+
+    def do_lasso_fitting(self, *args, **kwargs) -> Tuple[Lasso, ndarray]:
+        x_matrix = self.__form_x_matrix()
+        sklearn_lasso_class_args = Signature.from_callable(Lasso).bind(*args, **kwargs)
+        lasso_class = Lasso(**sklearn_lasso_class_args.arguments)
+        xx = x_matrix
+        lasso_class.fit(X=xx, y=self.target.values.flatten())
+        prediction = lasso_class.predict(xx)
+        return lasso_class, prediction
 
 
 class STFTProcessor(FFTProcessor):

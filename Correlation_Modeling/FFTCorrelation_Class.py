@@ -1,10 +1,12 @@
-from FFT_Class import FFTProcessor, APFormFourierSeriesProcessor, FourierSeriesProcessor, LASSOFFT
+from FFT_Class import FFTProcessor, APFormFourierSeriesProcessor, FourierSeriesProcessor, LASSOFFTProcessor, \
+    SCFormFourierSeriesProcessor
 from TimeSeries_Class import merge_two_time_series_df, TimeSeries, WindowedTimeSeries
 import pandas as pd
 from numpy import ndarray
 from Ploting.fast_plot_Func import *
-from typing import Tuple
+from typing import Tuple, Iterable
 from .utils import BivariateCorrelationAnalyser
+from itertools import permutations, combinations
 
 
 class FFTCorrelationMeta(type):
@@ -51,8 +53,8 @@ class BivariateFFTCorrelation(FFTCorrelation):
                  _time_series: TimeSeries = None,
                  main_time_series_df: pd.DataFrame = None,
                  vice_time_series_df: pd.DataFrame = None,
-                 main_considered_peaks_index: tuple,
-                 vice_considered_peaks_index: tuple,
+                 main_considered_peaks_index: Union[tuple, list],
+                 vice_considered_peaks_index: Union[tuple, list],
                  main_find_peaks_args: dict = None,
                  vice_find_peaks_args: dict = None,
                  **kwargs):
@@ -144,7 +146,20 @@ class BivariateFFTCorrelation(FFTCorrelation):
         vice_ifft = one_ifft(self.vice_fft, vice_considered_peaks_index, self.vice_found_peaks[1])
         return main_ifft, vice_ifft
 
-    def corr_between_pairwise_peaks_f(self) -> dict:
+    @property
+    def main_time_series(self) -> TimeSeries:
+        return TimeSeries(self.time_series.iloc[:, 0])
+
+    @property
+    def vice_time_series(self) -> TimeSeries:
+        return TimeSeries(self.time_series.iloc[:, 1])
+
+    def corr_between_pairwise_peak_f_ifft(self) -> dict:
+        """
+        :return 一个dict。key代表考虑的相关性系数（符合CorrelationFuncMapper类的定义），
+        value是一个pd.DataFrame，column的名字代表main序列中选定的第几个fft peak，
+        row的名字代表vice序列中选定的第几个fft peak
+        """
         pairwise_correlation = {key: pd.DataFrame(columns=list(self.main_ifft.keys()),
                                                   index=list(self.vice_ifft.keys())) for key in self.correlation_func}
         for key in pairwise_correlation:
@@ -157,8 +172,55 @@ class BivariateFFTCorrelation(FFTCorrelation):
                     pairwise_correlation[key].loc[vice_ifft_key, main_ifft_key] = one_result
         return pairwise_correlation
 
-    def corr_between_main_peaks_f_and_vice(self) -> dict:
-        pass
+    def corr_between_main_and_one_selected_vice_peak_f_ifft(self) -> dict:
+        """
+        这个函数和上面的corr_between_pairwise_peaks_f相似。但是只对vice做了fft，然后逆变换选定的*一个*peak，用得到的
+        reconstructed signal去和main的原信号计算相关性
+        :return 一个dict。key代表考虑的相关性系数（符合CorrelationFuncMapper类的定义），
+        value是一个pd.DataFrame，column的名字默认是'main time series'，
+        row的名字代表vice序列中选定的第几个fft peak
+        """
+        main_peaks_f_and_vice_correlation = {
+            key: pd.DataFrame(columns=('main time series',),
+                              index=list(self.vice_ifft.keys())) for key in self.correlation_func}
+        for key in main_peaks_f_and_vice_correlation:
+            for vice_ifft_key in self.vice_ifft.keys():
+                corr = BivariateCorrelationAnalyser(self.main_time_series.values,
+                                                    self.vice_ifft[vice_ifft_key][-1])
+                one_result = corr(key)[0]
+                main_peaks_f_and_vice_correlation[key].loc[vice_ifft_key] = one_result
+        return main_peaks_f_and_vice_correlation
 
-    def corr_between_combined_main_peaks_f_and_vice(self) -> ndarray:
-        pass
+    def corr_between_main_and_combined_selected_vice_peaks_f_ifft(
+            self, *,
+            use_lasso_fft_to_re_estimate: bool = True) -> ndarray:
+        # 检查有没有包含base量，包含的话会造成很多计算资源的浪费。因为它不影响结果
+        if use_lasso_fft_to_re_estimate:
+            frequency = np.array([x[0] for x in self.vice_ifft.values()])
+            lasso_fitting = LASSOFFTProcessor(
+                frequency=frequency,
+                target=self.vice_time_series
+            ).do_lasso_fitting(alpha=0.0001)
+            vice_lasso_fitting_coef = lasso_fitting[0].coef_
+            ax = series(self.vice_time_series.values, label='original')
+            ax = series(lasso_fitting[1], ax=ax, label='re')
+
+            sc_form_fourier_series_processor = SCFormFourierSeriesProcessor(
+                frequency=np.concatenate(([0], frequency)) if min(frequency)>0 else frequency,
+                coefficient_a=vice_lasso_fitting_coef[0::2],
+                coefficient_b=vice_lasso_fitting_coef[1::2]
+            )
+            ax = series(sc_form_fourier_series_processor(self.vice_time_series.index), ax=ax, label='re2')
+        else:
+            raise Exception("Must use LASSO to re-estimate, as otherwise the phase errors are very huge")
+
+        # def combine_ifft():
+        #     combine_ifft_results = [self.vice_ifft[i][-1] for i in selected_vice_ifft_keys]
+        #     combine_ifft_results = np.array(combine_ifft_results)
+        #     return np.sum(combine_ifft_results, axis=0)
+        #
+        # selected_vice_ifft_keys = list(self.vice_ifft.keys())
+        # combined_selected_vice_peaks_f_ifft = combine_ifft()
+        # self.vice_ifft
+
+        tt = 1
