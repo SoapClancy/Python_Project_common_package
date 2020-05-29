@@ -7,6 +7,8 @@ from Ploting.fast_plot_Func import *
 from typing import Tuple, Iterable
 from .utils import BivariateCorrelationAnalyser
 from itertools import permutations, combinations
+from collections import namedtuple, OrderedDict
+import re
 
 
 class FFTCorrelationMeta(type):
@@ -42,11 +44,7 @@ class FFTCorrelation(metaclass=FFTCorrelationMeta):
 
 
 class BivariateFFTCorrelation(FFTCorrelation):
-    __slots__ = ('main_fft',
-                 'vice_fft',
-                 'main_found_peaks',
-                 'vice_found_peaks',
-                 'main_ifft',
+    __slots__ = ('main_ifft',
                  'vice_ifft')
 
     def __init__(self, *,
@@ -62,9 +60,10 @@ class BivariateFFTCorrelation(FFTCorrelation):
         参数time_series和(main_time_series_df和vice_time_series_df)二选一。
         :param _time_series TimeSeries类或者其子类，默认第0列对应'main_time_series'，第1列对应'vice_time_series'
 
-        :param main_time_series_df 主时间序列，副时间序列存在的目的是为了更好地理解它。比如，在load和temperature相关性建模中，
-        load是主，temperature是副。这种关系主要影响corr_between_main_peaks_f_and_vice方法和
-        corr_between_combined_main_peaks_f_and_vice方法的行为。load会作为一个完整的时序的序列。但是temperature会被fft分解
+        :param main_time_series_df 主时间序列。比如，在load和temperature相关性建模中，
+        temperature是主，load是副。这种关系主要影响corr_between_main_peaks_f_and_vice方法和
+        corr_between_combined_main_peaks_f_and_vice方法的行为。
+        temperature（主）会作为一个完整的时序的序列。但是load（副）会被fft分解
 
         :param vice_time_series_df 副时间序列
 
@@ -72,6 +71,8 @@ class BivariateFFTCorrelation(FFTCorrelation):
         有关，也与FFTProcessor类的find_peaks_of_fft_frequency方法有关
 
         :param vice_considered_peaks_index
+
+
         """
         super(BivariateFFTCorrelation, self).__init__(**kwargs)
         if (main_time_series_df is None) and (vice_time_series_df is None):
@@ -79,18 +80,25 @@ class BivariateFFTCorrelation(FFTCorrelation):
         else:
             self.time_series = merge_two_time_series_df(main_time_series_df,
                                                         vice_time_series_df)
-        # fft
-        self.main_fft, self.vice_fft = self._do_fft()
         # 找peaks
-        self.main_found_peaks, self.vice_found_peaks = self._find_peaks(main_find_peaks_args=main_find_peaks_args,
-                                                                        vice_find_peaks_args=vice_find_peaks_args)
+        main_found_peaks, vice_found_peaks = self._find_principal_frequency_component(
+            main_find_peaks_args=main_find_peaks_args,
+            vice_find_peaks_args=vice_find_peaks_args
+        )
         # 对考虑的分量分别单独进行ifft
         # x_ifft的key就是x_considered_peaks_index, value是一个tuple(hz频率，指定单位频率，幅值，角度，ifft的结果)
-        self.main_ifft, self.vice_ifft = self._cal_ifft(main_considered_peaks_index=main_considered_peaks_index,
-                                                        vice_considered_peaks_index=vice_considered_peaks_index)
+        self.main_ifft, self.vice_ifft = self._cal_ifft(
+            main_found_peaks=main_found_peaks,
+            vice_found_peaks=vice_found_peaks,
+            main_considered_peaks_index=main_considered_peaks_index,
+            vice_considered_peaks_index=vice_considered_peaks_index
+        )
 
-    def _do_fft(self):
-        # 分别进行fft
+    def _do_fft(self) -> Tuple[FFTProcessor, FFTProcessor]:
+        """
+        分别进行fft
+        :return Tuple[FFTProcessor, FFTProcessor]
+        """
         main_time_series_fft = FFTProcessor(self.time_series.iloc[:, 0].values,
                                             sampling_period=self.sampling_period,
                                             name='main_time_series',
@@ -101,49 +109,62 @@ class BivariateFFTCorrelation(FFTCorrelation):
                                             n_fft=self.n_fft)  # type: FFTProcessor
         return main_time_series_fft, vice_time_series_fft
 
-    def _find_peaks(self, *, main_find_peaks_args: dict = None,
-                    vice_find_peaks_args: dict = None) -> Tuple[tuple, tuple]:
-
+    def _find_principal_frequency_component(self, *, main_find_peaks_args: dict = None,
+                                            vice_find_peaks_args: dict = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        :return: tuple中带两个pd.DataFrame，每个都是FFTProcessor对象find_peaks_of_fft_frequency方法后的结果（reset_index()）
+        """
+        main_fft, vice_fft = self._do_fft()
         # 找peaks
         main_find_peaks_args = main_find_peaks_args or {}
         vice_find_peaks_args = vice_find_peaks_args or {}
-        main_found_peaks = self.main_fft.find_peaks_of_fft_frequency(
+        main_found_peaks = main_fft.find_peaks_of_fft_frequency(
             self.considered_frequency_unit,
             **main_find_peaks_args)
-        vice_found_peaks = self.vice_fft.find_peaks_of_fft_frequency(
+        vice_found_peaks = vice_fft.find_peaks_of_fft_frequency(
             self.considered_frequency_unit,
             **vice_find_peaks_args)
-        return main_found_peaks, vice_found_peaks
+        return main_found_peaks[0].reset_index(), vice_found_peaks[0].reset_index()
 
-    def _cal_ifft(self, main_considered_peaks_index, vice_considered_peaks_index):
+    def _cal_ifft(self, *,
+                  main_found_peaks: pd.DataFrame,
+                  vice_found_peaks: pd.DataFrame,
+                  main_considered_peaks_index: Iterable,
+                  vice_considered_peaks_index: Iterable):
+        OneIFFTResultsVal = namedtuple(
+            'OneIFFTResultsVal',
+            ('hz_f', 'considered_unit_f', 'magnitude', 'phase', 're_constructed_time_domain')
+        )
+
         # key是int， 代表第几个peak。value是一个tuple(hz频率，指定单位频率，幅值，角度，ifft的结果)
-        def one_ifft(fft_processor, considered_peaks_index, peaks_index_in_full_results: ndarray):
+        def one_ifft(considered_peaks_index, found_peaks: pd.DataFrame, ):
             """
-            :param fft_processor 需要处理的FFTProcessor对象
             :param considered_peaks_index 考虑第几个peaks
-            :param peaks_index_in_full_results peaks分量在full FFT results中的索引。即scipy.signal.find_peaks函数的返回值0
+            :param found_peaks peaks self._find_principal_frequency_component方法的结果的元素
             """
+
             temp = {key: None for key in considered_peaks_index}
             for key in temp:
-                fft_results = fft_processor.single_sided_frequency_axis_all_supported()[
-                    [self.considered_frequency_unit, 'magnitude', 'phase angle (rad)']]
-                this_peaks_index_in_full_results = peaks_index_in_full_results[key]
-                hz_f = fft_results.index[this_peaks_index_in_full_results]
-                magnitude = fft_results.values[this_peaks_index_in_full_results, 1]
-                phase = fft_results.values[this_peaks_index_in_full_results, 2]
+                hz_f = found_peaks['frequency'][key]
+                considered_unit_f = found_peaks[self.considered_frequency_unit][key]
+                magnitude = found_peaks['magnitude'][key]
+                phase = found_peaks['phase angle (rad)'][key]
+
                 re_constructed_time_domain = APFormFourierSeriesProcessor(frequency=np.array([hz_f]),
                                                                           magnitude=np.array([magnitude]),
                                                                           phase=np.array([phase]))
                 re_constructed_time_domain = re_constructed_time_domain(self.time_series.index, False)
-                temp[key] = (hz_f,
-                             fft_results.values[0],
-                             magnitude,
-                             phase,
-                             re_constructed_time_domain)
+                temp[key] = OneIFFTResultsVal(
+                    hz_f=hz_f,
+                    considered_unit_f=considered_unit_f,
+                    magnitude=magnitude,
+                    phase=phase,
+                    re_constructed_time_domain=re_constructed_time_domain
+                )
             return temp
 
-        main_ifft = one_ifft(self.main_fft, main_considered_peaks_index, self.main_found_peaks[1])
-        vice_ifft = one_ifft(self.vice_fft, vice_considered_peaks_index, self.vice_found_peaks[1])
+        main_ifft = one_ifft(main_considered_peaks_index, main_found_peaks)
+        vice_ifft = one_ifft(vice_considered_peaks_index, vice_found_peaks)
         return main_ifft, vice_ifft
 
     @property
@@ -193,24 +214,42 @@ class BivariateFFTCorrelation(FFTCorrelation):
 
     def corr_between_main_and_combined_selected_vice_peaks_f_ifft(
             self, *,
-            use_lasso_fft_to_re_estimate: bool = True) -> ndarray:
+            use_lasso_fft_to_re_estimate: bool = True,
+            vice_extra_hz_f: Iterable = None, ) -> ndarray:
+        """
+        :param use_lasso_fft_to_re_estimate
+        :param vice_extra_hz_f 给vice加入额外的频率用于分解
+        """
         # 检查有没有包含base量，包含的话会造成很多计算资源的浪费。因为它不影响结果
+        vice_extra_hz_f = vice_extra_hz_f or np.array([])
         if use_lasso_fft_to_re_estimate:
-            frequency = np.array([x[0] for x in self.vice_ifft.values()])
+            frequency = np.concatenate((vice_extra_hz_f, [x[0] for x in self.vice_ifft.values()]))
             lasso_fitting = LASSOFFTProcessor(
                 frequency=frequency,
                 target=self.vice_time_series
-            ).do_lasso_fitting(alpha=0.0001)
+            ).do_lasso_fitting(alpha=0.01,
+                               max_iter=2500,
+                               tol=1e-8)
             vice_lasso_fitting_coef = lasso_fitting[0].coef_
-            ax = series(self.vice_time_series.values, label='original')
-            ax = series(lasso_fitting[1], ax=ax, label='re')
 
-            sc_form_fourier_series_processor = SCFormFourierSeriesProcessor(
-                frequency=np.concatenate(([0], frequency)) if min(frequency)>0 else frequency,
-                coefficient_a=vice_lasso_fitting_coef[0::2],
-                coefficient_b=vice_lasso_fitting_coef[1::2]
-            )
-            ax = series(sc_form_fourier_series_processor(self.vice_time_series.index), ax=ax, label='re2')
+            tt=1
+            title = 'Day: ' + re.findall(r'\d{4}-\d{1,2}-\d{1,2}', str(self.vice_time_series.first_valid_index()))[0]
+            ax = time_series(x=self.vice_time_series.index,
+                             y=self.vice_time_series.values,
+                             label='original')
+            ax = time_series(x=self.vice_time_series.index,
+                             y=lasso_fitting[1], ax=ax, label='reconstructed',
+                             title=title + ' (adding extra f=1/(365*24*3600) Hz, f=1/(7*24*3600) Hz)')
+
+            # ax = series(self.vice_time_series.values, label='original')
+            # ax = series(lasso_fitting[1], ax=ax, label='re')
+            #
+            # sc_form_fourier_series_processor = SCFormFourierSeriesProcessor(
+            #     frequency=np.concatenate(([0], frequency)) if min(frequency) > 0 else frequency,
+            #     coefficient_a=vice_lasso_fitting_coef[0::2],
+            #     coefficient_b=vice_lasso_fitting_coef[1::2]
+            # )
+            # ax = series(sc_form_fourier_series_processor(self.vice_time_series.index), ax=ax, label='re2')
         else:
             raise Exception("Must use LASSO to re-estimate, as otherwise the phase errors are very huge")
 
