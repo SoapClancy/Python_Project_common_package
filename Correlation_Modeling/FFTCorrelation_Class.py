@@ -214,52 +214,34 @@ class BivariateFFTCorrelation(FFTCorrelation):
 
     def corr_between_main_and_combined_selected_vice_peaks_f_ifft(
             self, *,
-            use_lasso_fft_to_re_estimate: bool = True,
-            vice_extra_hz_f: Iterable = None, ) -> ndarray:
+            vice_extra_hz_f: Iterable = None, ) -> dict:
         """
-        :param use_lasso_fft_to_re_estimate
+        利用lasso去fit选择的frequencies form的Fourier expansion
+
         :param vice_extra_hz_f 给vice加入额外的频率用于分解
+
+        :return 一个dict。key代表考虑的相关性系数（符合CorrelationFuncMapper类的定义），
+        value是一个namedtuple -> 属性frequency_combination是一个tuple，属性corr是相关性值
         """
-        # 检查有没有包含base量，包含的话会造成很多计算资源的浪费。因为它不影响结果
+        # TODO 检查有没有包含base量，包含的话会造成很多计算资源的浪费。因为它不影响结果
+
         vice_extra_hz_f = vice_extra_hz_f or np.array([])
-        if use_lasso_fft_to_re_estimate:
-            frequency = np.concatenate((vice_extra_hz_f, [x[0] for x in self.vice_ifft.values()]))
-            lasso_fitting = LASSOFFTProcessor(
-                frequency=frequency,
-                target=self.vice_time_series
-            ).do_lasso_fitting(alpha=0.01,
-                               max_iter=2500,
-                               tol=1e-8)
-            vice_lasso_fitting_coef = lasso_fitting[0].coef_
+        # 强制利用use_lasso_fft_to_re_estimate:
+        frequency = np.concatenate((vice_extra_hz_f, [x[0] for x in self.vice_ifft.values()]))
+        lasso_fitting = LASSOFFTProcessor(
+            frequency=frequency,
+            target=self.vice_time_series
+        ).do_lasso_fitting(alpha=0.005,
+                           max_iter=2500,
+                           tol=1e-8)
+        vice_lasso_fitting_coef = lasso_fitting[0].coef_
 
-            tt=1
-            title = 'Day: ' + re.findall(r'\d{4}-\d{1,2}-\d{1,2}', str(self.vice_time_series.first_valid_index()))[0]
-            ax = time_series(x=self.vice_time_series.index,
-                             y=self.vice_time_series.values,
-                             label='original')
-            ax = time_series(x=self.vice_time_series.index,
-                             y=lasso_fitting[1], ax=ax, label='reconstructed',
-                             title=title + ' (adding extra f=1/(365*24*3600) Hz, f=1/(7*24*3600) Hz)')
+        title = 'Day: ' + re.findall(r'\d{4}-\d{1,2}-\d{1,2}', str(self.vice_time_series.first_valid_index()))[0]
+        ax = time_series(x=self.vice_time_series.index,
+                         y=self.vice_time_series.values,
+                         label='original')
+        ax = time_series(x=self.vice_time_series.index,
+                         y=lasso_fitting[-1](self.vice_time_series.index),
+                         ax=ax, linestyle='--', color='k', label='re2')
 
-            # ax = series(self.vice_time_series.values, label='original')
-            # ax = series(lasso_fitting[1], ax=ax, label='re')
-            #
-            # sc_form_fourier_series_processor = SCFormFourierSeriesProcessor(
-            #     frequency=np.concatenate(([0], frequency)) if min(frequency) > 0 else frequency,
-            #     coefficient_a=vice_lasso_fitting_coef[0::2],
-            #     coefficient_b=vice_lasso_fitting_coef[1::2]
-            # )
-            # ax = series(sc_form_fourier_series_processor(self.vice_time_series.index), ax=ax, label='re2')
-        else:
-            raise Exception("Must use LASSO to re-estimate, as otherwise the phase errors are very huge")
 
-        # def combine_ifft():
-        #     combine_ifft_results = [self.vice_ifft[i][-1] for i in selected_vice_ifft_keys]
-        #     combine_ifft_results = np.array(combine_ifft_results)
-        #     return np.sum(combine_ifft_results, axis=0)
-        #
-        # selected_vice_ifft_keys = list(self.vice_ifft.keys())
-        # combined_selected_vice_peaks_f_ifft = combine_ifft()
-        # self.vice_ifft
-
-        tt = 1

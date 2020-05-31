@@ -22,7 +22,6 @@ import copy
 from sklearn.linear_model import Lasso
 import warnings
 
-
 USE_DEGREE_FOR_PLOT = True
 
 
@@ -483,14 +482,24 @@ class LASSOFFTProcessor:
         _, x_matrix = sc_form_fourier_series_processor(self.target.index, return_raw=True)
         return x_matrix
 
-    def do_lasso_fitting(self, *args, **kwargs) -> Tuple[Lasso, ndarray]:
+    def do_lasso_fitting(self, *args, fit_intercept=False, **kwargs) \
+            -> Tuple[Lasso, ndarray, SCFormFourierSeriesProcessor]:
+        """
+        利用sklearn中的lasso去fit傅里叶级数
+        :return: 元素0是fit好的Lasso对象，
+        元素1是Lasso对象预测的值（即：模型输出），
+        元素2是基于Lasso对象的coef属性生成SCFormFourierSeriesProcessor对象
+        """
         x_matrix = self.__form_x_matrix()
         sklearn_lasso_class_args = Signature.from_callable(Lasso).bind(*args, **kwargs)
-        lasso_class = Lasso(**sklearn_lasso_class_args.arguments)
+        lasso_class = Lasso(fit_intercept=fit_intercept,
+                            **sklearn_lasso_class_args.arguments)
         xx = x_matrix
         lasso_class.fit(X=xx, y=self.target.values.flatten())
         prediction = lasso_class.predict(xx)
-        return lasso_class, prediction
+        return lasso_class, prediction, SCFormFourierSeriesProcessor(frequency=self.frequency,
+                                                                     coefficient_a=lasso_class.coef_[0::2],
+                                                                     coefficient_b=lasso_class.coef_[1::2])
 
 
 class STFTProcessor(FFTProcessor):
