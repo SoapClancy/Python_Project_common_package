@@ -21,6 +21,8 @@ from Data_Preprocessing.utils import scale_to_minus_plus_one
 import copy
 from sklearn.linear_model import Lasso
 import warnings
+from collections import namedtuple
+from itertools import combinations
 
 USE_DEGREE_FOR_PLOT = True
 
@@ -396,6 +398,15 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
     def __call__(self, x_value: Union[pd.DatetimeIndex, ndarray],
                  scale_to_minus_plus_one_flag=False, *,
                  return_raw=False):
+        """
+        返回对于给定x_value值的FourierSeriesProcessor对象的输出
+
+        :param x_value 需要计算的x坐标
+
+        :param scale_to_minus_plus_one_flag 结果是否要scale到正负1之间
+
+        :param return_raw 是否返回各个频率分量的相应
+        """
         x_value = self.cal_usable_x_value(x_value)
         callable_component_funcs = self._form_callable_component_funcs()
         results = []
@@ -406,7 +417,7 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
         if scale_to_minus_plus_one_flag:
             results = scale_to_minus_plus_one(results)
         if not return_raw:
-            return results
+            return results, None
         else:
             return results, raw_results.T
 
@@ -420,7 +431,6 @@ class APFormFourierSeriesProcessor(FourierSeriesProcessor):
             this_magnitude = float(self.magnitude[i])
             this_frequency = float(self.frequency[i])
             this_phase = float(self.phase[i])
-            # TODO
             # 又是python copy的问题，
             # component_funcs.append(lambda x: this_magnitude * np.cos(2 * np.pi * this_frequency * x - this_phase))
             # 会使得component_funcs中每个函数的调用结果都一样。因为深层的函数内部的参数的指向一样
@@ -433,6 +443,9 @@ class APFormFourierSeriesProcessor(FourierSeriesProcessor):
     def init_using_fft_found_peaks(cls,
                                    fft_found_peaks: Tuple[pd.DataFrame, ndarray, Union[None, Any], Union[None, Any]],
                                    considered_peaks_index: Union[list, tuple]):
+        """
+        用FFTProcessor对象的find_peaks_of_fft_frequency的结果去生成APFormFourierSeriesProcessor对象
+        """
         frequency = fft_found_peaks[0].index[considered_peaks_index].values
         magnitude = fft_found_peaks[0]['magnitude'].values[considered_peaks_index]
         phase = fft_found_peaks[0]['phase angle (rad)'].values[considered_peaks_index]
@@ -457,6 +470,40 @@ class SCFormFourierSeriesProcessor(FourierSeriesProcessor):
             component_funcs.append(eval(source_code))  # 奇数列代表sin
 
         return tuple(component_funcs)
+
+    def combination_of_frequency_selector(self, remove_base: bool = False, *, call__raw_results: ndarray) -> tuple:
+        """
+        将__call__的raw_results进行排列组合
+
+        :param remove_base 不考虑base
+
+        :param call__raw_results __call__的raw_results
+
+        :return namedtuple -> 属性frequency_combination是一个tuple，属性partly_combination_reconstructed是对应的时域结果
+        """
+        selector_template = np.full((call__raw_results.shape[1], 1), 0)
+        PartlyCall = namedtuple("PartlyCall", ("frequency_combination", "partly_combination_reconstructed"))
+        self_frequency_slicer = list(range(0, self.frequency.size))
+        final_results = []
+        # 生成可能的排列组合
+        # 至少两个元素，最多全部选择
+        for this_number_of_components in range(2, self.frequency.size):
+            # 在这个元素数量下的组合
+            all_combinations_under_this_number = combinations(self_frequency_slicer, this_number_of_components)
+            for this_combination in all_combinations_under_this_number:
+                # 如果不考虑base
+                if remove_base and (0 in this_combination):
+                    continue
+                this_selector = copy.deepcopy(selector_template)
+                this_selector[np.array(list(map(lambda x: [x*2, x*2+1], this_combination))).flatten()] = 1
+                final_results.append(
+                    PartlyCall(
+                        frequency_combination=tuple(self.frequency[list(this_combination)]),
+                        partly_combination_reconstructed=np.matmul(call__raw_results, this_selector).flatten()
+                    )
+                )
+
+        return tuple(final_results)
 
 
 class LASSOFFTProcessor:

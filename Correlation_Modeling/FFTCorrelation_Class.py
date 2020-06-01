@@ -6,7 +6,6 @@ from numpy import ndarray
 from Ploting.fast_plot_Func import *
 from typing import Tuple, Iterable
 from .utils import BivariateCorrelationAnalyser
-from itertools import permutations, combinations
 from collections import namedtuple, OrderedDict
 import re
 
@@ -214,34 +213,58 @@ class BivariateFFTCorrelation(FFTCorrelation):
 
     def corr_between_main_and_combined_selected_vice_peaks_f_ifft(
             self, *,
-            vice_extra_hz_f: Iterable = None, ) -> dict:
+            vice_extra_hz_f: Iterable = None,
+            do_lasso_fitting_args: dict = None) -> dict:
         """
         利用lasso去fit选择的frequencies form的Fourier expansion
 
         :param vice_extra_hz_f 给vice加入额外的频率用于分解
 
-        :return 一个dict。key代表考虑的相关性系数（符合CorrelationFuncMapper类的定义），
-        value是一个namedtuple -> 属性frequency_combination是一个tuple，属性corr是相关性值
-        """
-        # TODO 检查有没有包含base量，包含的话会造成很多计算资源的浪费。因为它不影响结果
+        :param do_lasso_fitting_args LASSOFFTProcessor对象的do_lasso_fitting函数的args
 
+        :return 一个dict。key代表考虑的相关性系数（符合CorrelationFuncMapper类的定义），
+        value是tuple，里面的元素是排序好的namedtuple -> 属性frequency_combination是一个tuple，属性corr_value是相关性值
+        """
         vice_extra_hz_f = vice_extra_hz_f or np.array([])
-        # 强制利用use_lasso_fft_to_re_estimate:
+        do_lasso_fitting_args = do_lasso_fitting_args or {'alpha': 0.005,
+                                                          'max_iter': 2500,
+                                                          'tol': 1e-8}
+        # 强制利用use_lasso_fft_to_re_estimate。
+        # 注意fourier_full_results包含了base量，做combination的时候用不到
         frequency = np.concatenate((vice_extra_hz_f, [x[0] for x in self.vice_ifft.values()]))
         lasso_fitting = LASSOFFTProcessor(
             frequency=frequency,
             target=self.vice_time_series
-        ).do_lasso_fitting(alpha=0.005,
-                           max_iter=2500,
-                           tol=1e-8)
-        vice_lasso_fitting_coef = lasso_fitting[0].coef_
+        ).do_lasso_fitting(**do_lasso_fitting_args)
+        sc_form_fourier_series_processor = lasso_fitting[-1]  # type: SCFormFourierSeriesProcessor
+        fourier_full_results = sc_form_fourier_series_processor(self.vice_time_series.index,
+                                                                return_raw=True)[-1]
+        # combination
+        combination = sc_form_fourier_series_processor.combination_of_frequency_selector(
+            remove_base=True,
+            call__raw_results=fourier_full_results
+        )
+        # 计算相关性系数并且sort
+        PartlyCallCorr = namedtuple("PartlyCallCorr",
+                                    ("frequency_combination", "partly_combination_reconstructed", "corr_value"))
+        final_correlation_results = {key: None for key in self.correlation_func}
+        for key in final_correlation_results:
+            this_corr_func_results = []
+            for this_combination in combination:
+                corr = BivariateCorrelationAnalyser(self.main_time_series.values.flatten(),
+                                                    this_combination.partly_combination_reconstructed)
+                this_corr_func_results.append(
+                    PartlyCallCorr(
+                        frequency_combination=this_combination.frequency_combination,
+                        partly_combination_reconstructed=this_combination.partly_combination_reconstructed,
+                        corr_value=corr(key)[0]
+                    )
+                )
+            # 排序
+            this_corr_func_results = sorted(this_corr_func_results,
+                                            key=lambda x: x.corr_value, reverse=True)
+            final_correlation_results[key] = tuple(this_corr_func_results)
 
-        title = 'Day: ' + re.findall(r'\d{4}-\d{1,2}-\d{1,2}', str(self.vice_time_series.first_valid_index()))[0]
-        ax = time_series(x=self.vice_time_series.index,
-                         y=self.vice_time_series.values,
-                         label='original')
-        ax = time_series(x=self.vice_time_series.index,
-                         y=lasso_fitting[-1](self.vice_time_series.index),
-                         ax=ax, linestyle='--', color='k', label='re2')
+        return final_correlation_results
 
 
