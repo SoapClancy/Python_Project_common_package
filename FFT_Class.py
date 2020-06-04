@@ -23,6 +23,8 @@ from sklearn.linear_model import Lasso
 import warnings
 from collections import namedtuple
 from itertools import combinations
+from Regression_Analysis.Models import BayesianRegression
+
 
 USE_DEGREE_FOR_PLOT = True
 
@@ -495,7 +497,7 @@ class SCFormFourierSeriesProcessor(FourierSeriesProcessor):
                 if remove_base and (0 in this_combination):
                     continue
                 this_selector = copy.deepcopy(selector_template)
-                this_selector[np.array(list(map(lambda x: [x*2, x*2+1], this_combination))).flatten()] = 1
+                this_selector[np.array(list(map(lambda x: [x * 2, x * 2 + 1], this_combination))).flatten()] = 1
                 final_results.append(
                     PartlyCall(
                         frequency_combination=tuple(self.frequency[list(this_combination)]),
@@ -506,7 +508,7 @@ class SCFormFourierSeriesProcessor(FourierSeriesProcessor):
         return tuple(final_results)
 
 
-class LASSOFFTProcessor:
+class AdvancedFFTProcessor:
     __slots__ = ('frequency', 'target')
 
     def __init__(self, frequency: ndarray, *, target: TimeSeries):
@@ -515,13 +517,13 @@ class LASSOFFTProcessor:
             raise ValueError("'target' attribute in LASSOFFTProcessor object must be an instance of TimeSeries class")
         self.target = target
 
-    def __form_x_matrix(self) -> ndarray:
+    def _form_x_matrix(self) -> ndarray:
         """
         生成SCFormFourierSeriesProcessor对象，默认coefficient全是1，调用__call__方法生成对应矩阵
         :return ：偶数列代表cos, 奇数列代表sin
         """
         if not np.isclose(np.min(self.frequency), 0, rtol=1.e-16, atol=1.e-16):
-            warnings.warn("要用到LASSO fitting，那么必须要包含base分量，已经自动添加", UserWarning)
+            warnings.warn("要用到Advanced FFT fitting，那么必须要包含base分量，已经自动添加", UserWarning)
         self.frequency = np.concatenate(([0], self.frequency))
         sc_form_fourier_series_processor = SCFormFourierSeriesProcessor(
             frequency=self.frequency
@@ -529,15 +531,20 @@ class LASSOFFTProcessor:
         _, x_matrix = sc_form_fourier_series_processor(self.target.index, return_raw=True)
         return x_matrix
 
+
+class LASSOFFTProcessor(AdvancedFFTProcessor):
+
     def do_lasso_fitting(self, *args, fit_intercept=False, **kwargs) \
             -> Tuple[Lasso, ndarray, SCFormFourierSeriesProcessor]:
         """
         利用sklearn中的lasso去fit傅里叶级数
+        :param fit_intercept: 不允许fit截距，因为那说到底就是base分量的幅值，base分量没有的话会被自动添加
+        :param
         :return: 元素0是fit好的Lasso对象，
         元素1是Lasso对象预测的值（即：模型输出），
         元素2是基于Lasso对象的coef属性生成SCFormFourierSeriesProcessor对象
         """
-        x_matrix = self.__form_x_matrix()
+        x_matrix = self._form_x_matrix()
         sklearn_lasso_class_args = Signature.from_callable(Lasso).bind(*args, **kwargs)
         lasso_class = Lasso(fit_intercept=fit_intercept,
                             **sklearn_lasso_class_args.arguments)
@@ -547,6 +554,21 @@ class LASSOFFTProcessor:
         return lasso_class, prediction, SCFormFourierSeriesProcessor(frequency=self.frequency,
                                                                      coefficient_a=lasso_class.coef_[0::2],
                                                                      coefficient_b=lasso_class.coef_[1::2])
+
+
+class BayesianFFTProcessor(AdvancedFFTProcessor):
+
+    def do_bayesian_fitting(self, *args, fit_intercept=False, **kwargs) \
+            -> Tuple[Lasso, ndarray, SCFormFourierSeriesProcessor]:
+        """
+        利用bayesian regression去fit傅里叶级数
+        :param fit_intercept: 不允许fit截距，因为那说到底就是base分量的幅值，base分量没有的话会被自动添加
+        :param
+        :return: 元素0是fit好的Lasso对象，
+        元素1是Lasso对象预测的值（即：模型输出），
+        元素2是基于Lasso对象的coef属性生成SCFormFourierSeriesProcessor对象
+        """
+        tt = 1
 
 
 class STFTProcessor(FFTProcessor):

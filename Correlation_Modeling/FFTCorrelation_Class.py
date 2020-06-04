@@ -1,5 +1,5 @@
 from FFT_Class import FFTProcessor, APFormFourierSeriesProcessor, FourierSeriesProcessor, LASSOFFTProcessor, \
-    SCFormFourierSeriesProcessor
+    SCFormFourierSeriesProcessor, BayesianFFTProcessor
 from TimeSeries_Class import merge_two_time_series_df, TimeSeries, WindowedTimeSeries
 import pandas as pd
 from numpy import ndarray
@@ -214,7 +214,8 @@ class BivariateFFTCorrelation(FFTCorrelation):
     def corr_between_main_and_combined_selected_vice_peaks_f_ifft(
             self, *,
             vice_extra_hz_f: Iterable = None,
-            do_lasso_fitting_args: dict = None) -> dict:
+            do_lasso_fitting_args: dict = None,
+            do_bayesian_fitting_args: dict = None) -> dict:
         """
         利用lasso去fit选择的frequencies form的Fourier expansion
 
@@ -222,21 +223,36 @@ class BivariateFFTCorrelation(FFTCorrelation):
 
         :param do_lasso_fitting_args LASSOFFTProcessor对象的do_lasso_fitting函数的args
 
+        :param do_bayesian_fitting_args BayesianFFTProcessor对象do_bayesian_fitting函数的args
+
         :return 一个dict。key代表考虑的相关性系数（符合CorrelationFuncMapper类的定义），
         value是tuple，里面的元素是排序好的namedtuple -> 属性frequency_combination是一个tuple，属性corr_value是相关性值
         """
         vice_extra_hz_f = vice_extra_hz_f or np.array([])
-        do_lasso_fitting_args = do_lasso_fitting_args or {'alpha': 0.005,
-                                                          'max_iter': 2500,
-                                                          'tol': 1e-8}
-        # 强制利用use_lasso_fft_to_re_estimate。
+
         # 注意fourier_full_results包含了base量，做combination的时候用不到
         frequency = np.concatenate((vice_extra_hz_f, [x[0] for x in self.vice_ifft.values()]))
-        lasso_fitting = LASSOFFTProcessor(
-            frequency=frequency,
-            target=self.vice_time_series
-        ).do_lasso_fitting(**do_lasso_fitting_args)
-        sc_form_fourier_series_processor = lasso_fitting[-1]  # type: SCFormFourierSeriesProcessor
+        # 优先用lasso去fit (#强制利用use_lasso_fft_to_re_estimate)
+        if ((do_lasso_fitting_args is None) and (do_bayesian_fitting_args is None)) or \
+                (do_lasso_fitting_args is not None):
+            # 设置lasso默认参数
+            do_lasso_fitting_args = do_lasso_fitting_args or {'alpha': 0.005,
+                                                              'max_iter': 2500,
+                                                              'tol': 1e-8}
+            lasso_fitting = LASSOFFTProcessor(
+                frequency=frequency,
+                target=self.vice_time_series
+            ).do_lasso_fitting(**do_lasso_fitting_args)
+            sc_form_fourier_series_processor = lasso_fitting[-1]  # type: SCFormFourierSeriesProcessor
+        # 如果没给lasso，就用bayesian
+        else:
+            # 设置bayesian默认参数
+            do_bayesian_fitting_args = do_bayesian_fitting_args or {}
+            bayesian_fitting = BayesianFFTProcessor(
+                frequency=frequency,
+                target=self.vice_time_series
+            ).do_bayesian_fitting(**do_bayesian_fitting_args)
+
         fourier_full_results = sc_form_fourier_series_processor(self.vice_time_series.index,
                                                                 return_raw=True)[-1]
         # combination
@@ -266,5 +282,3 @@ class BivariateFFTCorrelation(FFTCorrelation):
             final_correlation_results[key] = tuple(this_corr_func_results)
 
         return final_correlation_results
-
-
