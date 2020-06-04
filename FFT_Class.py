@@ -24,6 +24,8 @@ import warnings
 from collections import namedtuple
 from itertools import combinations
 from Regression_Analysis.Models import BayesianRegression
+import torch
+import pyro.distributions as dist
 
 
 USE_DEGREE_FOR_PLOT = True
@@ -559,16 +561,32 @@ class LASSOFFTProcessor(AdvancedFFTProcessor):
 class BayesianFFTProcessor(AdvancedFFTProcessor):
 
     def do_bayesian_fitting(self, *args, fit_intercept=False, **kwargs) \
-            -> Tuple[Lasso, ndarray, SCFormFourierSeriesProcessor]:
+            -> Tuple[BayesianRegression, ndarray, SCFormFourierSeriesProcessor]:
         """
         利用bayesian regression去fit傅里叶级数
         :param fit_intercept: 不允许fit截距，因为那说到底就是base分量的幅值，base分量没有的话会被自动添加
         :param
-        :return: 元素0是fit好的Lasso对象，
-        元素1是Lasso对象预测的值（即：模型输出），
-        元素2是基于Lasso对象的coef属性生成SCFormFourierSeriesProcessor对象
+        :return: 元素0是fit好的BayesianRegression对象，
+        元素1是BayesianRegression对象预测的值（即：模型输出），
+        元素2是基于BayesianRegression对象的coef属性生成SCFormFourierSeriesProcessor对象
         """
-        tt = 1
+        x_matrix = torch.tensor(self._form_x_matrix(), dtype=torch.float)
+        y = torch.tensor(self.target.values.flatten(), dtype=torch.float)
+        # 用lasso估计作为初值
+        initial_guess = BayesianRegression.lasso_results(x_matrix, y, False)[0]
+        # 用Laplace分布作为prior
+        weight_prior = dist.Laplace(torch.tensor(initial_guess, dtype=torch.float).reshape([1, x_matrix.shape[-1]]),
+                                    3.).to_event(2)
+        bayesian_regression = BayesianRegression(x_matrix.shape[-1], 1,
+                                                 fit_intercept=False,
+                                                 weight_prior=weight_prior)
+        # mcmc
+        mcmc_run_results = bayesian_regression.run_mcmc(x_matrix, y,
+                                                        num_samples=300, warmup_steps=100)
+        # DEBUG
+
+        tt=1
+
 
 
 class STFTProcessor(FFTProcessor):
