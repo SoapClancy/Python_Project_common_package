@@ -575,6 +575,8 @@ class BayesianFFTProcessor(AdvancedFFTProcessor):
         # 用lasso估计作为初值
         initial_guess = BayesianRegression.lasso_results(x_matrix, y, False)[0]
         # 用Laplace分布作为prior
+        # TODO add constrain
+
         weight_prior = dist.Laplace(torch.tensor(initial_guess, dtype=torch.float).reshape([1, x_matrix.shape[-1]]),
                                     3.).to_event(2)
         bayesian_regression = BayesianRegression(x_matrix.shape[-1], 1,

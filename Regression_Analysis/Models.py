@@ -33,6 +33,7 @@ class BayesianRegression(PyroModule):
             self.linear.bias = PyroSample(bias_prior)
 
     def forward(self, x: torch.Tensor, y: torch.Tensor):
+        # TODO sigma分布
         sigma = pyro.sample("sigma", dist.Uniform(0., 10.))
         mean = self.linear(x).squeeze(-1)
         with pyro.plate("data", x.shape[0]):
