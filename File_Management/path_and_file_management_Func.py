@@ -3,6 +3,7 @@ import winreg
 import re
 from typing import Iterable, Tuple
 from functools import singledispatch
+from pathlib import Path
 
 
 def try_to_find_file(file_path):
@@ -22,7 +23,7 @@ def try_to_find_file_if_exist_then_delete(file_):
 # 使用泛型函数
 @singledispatch
 def try_to_find_path_otherwise_make_one(path_):
-    assert (isinstance(path_, tuple)) or isinstance(path_, str)
+    assert (isinstance(path_, tuple)) or isinstance(path_, str) or isinstance(path_, Path)
 
 
 @try_to_find_path_otherwise_make_one.register(str)
@@ -40,9 +41,14 @@ def _(path_: Tuple[str, ...]):
         try_to_find_path_otherwise_make_one(i)
 
 
+@try_to_find_path_otherwise_make_one.register(Path)
+def _(path_: Path):
+    path_.mkdir(parents=True, exist_ok=True)
+
+
 def list_all_specific_format_files_in_a_path(path_: str, format_: str, order: str = 'time'):
     files = os.listdir(path_)
-    files = [x for x in files if re.search('\.' + format_ + '$', x)]
+    files = [x for x in files if re.search(r'\.' + format_ + '$', x)]
     files = [path_ + x for x in files]
     if order == 'time':
         files = sorted(files, key=lambda x: os.path.getctime(x))
