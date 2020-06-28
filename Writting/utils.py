@@ -4,7 +4,7 @@ from Writting import docx_document_template_to_collect_figures
 from docx import Document
 from docx.shared import Cm, Pt
 from File_Management.path_and_file_management_Func import try_to_find_file_if_exist_then_delete, \
-    list_all_specific_format_files_in_a_path
+    list_all_specific_format_files_in_a_folder_path
 
 
 def put_png_file_into_a_docx(png_file_in_a_dict: dict, docx_file_path: Union[str, Path], cols: int = 2):
@@ -42,7 +42,7 @@ def put_png_file_into_a_docx(png_file_in_a_dict: dict, docx_file_path: Union[str
 
 
 def put_all_png_in_a_path_into_a_docx(path_: Union[str, Path], docx_file_path: Union[str, Path]):
-    files = list_all_specific_format_files_in_a_path(path_, 'png', '')
+    files = list_all_specific_format_files_in_a_folder_path(path_, 'png', '')
     to_do_ = {f'{i}': (x,) for i, x in enumerate(files)}
     put_png_file_into_a_docx(to_do_, docx_file_path)
 

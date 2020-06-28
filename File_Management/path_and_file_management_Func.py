@@ -46,7 +46,7 @@ def _(path_: Path):
     path_.mkdir(parents=True, exist_ok=True)
 
 
-def list_all_specific_format_files_in_a_path(path_: str, format_: str, order: str = 'time'):
+def list_all_specific_format_files_in_a_folder_path(path_: str, format_: str, order: str = 'time'):
     files = os.listdir(path_)
     files = [x for x in files if re.search(r'\.' + format_ + '$', x)]
     files = [path_ + x for x in files]

@@ -16,17 +16,18 @@ from scipy.signal import get_window
 import re
 
 
-def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
-                             new_time_series_df: pd.DataFrame,
+def merge_two_time_series_df(main_time_series_like_df: pd.DataFrame,
+                             new_time_series_like_df: pd.DataFrame,
                              naively_ignore_tz_info: bool = True,
                              resolution: str = 'second',
                              do_interpolate: bool = True,
                              interpolate_method='time') -> pd.DataFrame:
     """
-    用于合并两个two_time_series_df。two_time_series_df指的是以datetime作为index的pd.DataFrame。
+    用于合并两个XXX_time_series_df。XXX_time_series_like_df指的是以datetime作为index的pd.DataFrame。
+    和TimeSeries对象不同，XXX_time_series_like_df并不需要相邻的index的间隔一样，详见TimeSeries实例的_check_ordinal_time_delta
     方法在于分别从两个df的index中提取出year, month, day, hour, minute, second作为新的columns，再inner merge
-    :param main_time_series_df: the result's index should be the same as the index of main_time_series_df
-    :param new_time_series_df: the time_series_df can be considered as extra information/dimensions added
+    :param main_time_series_like_df: the result's index should be the same as the index of main_time_series_df
+    :param new_time_series_like_df: the time_series_df can be considered as extra information/dimensions added
     :param naively_ignore_tz_info: 不用考虑tz转换！df自带的merge如果遇到一个df的index有tz而另一个df的index没有tz就没办法合并，
     而且转成有tz的index有可能因为DST造成ambiguous exception
     :param resolution: 合并的resolution，目前只支持到second
@@ -34,8 +35,8 @@ def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
     :param interpolate_method
     :return:
     """
-    main_time_series_df = copy.deepcopy(main_time_series_df)
-    new_time_series_df = copy.deepcopy(new_time_series_df)
+    main_time_series_like_df = copy.deepcopy(main_time_series_like_df)
+    new_time_series_like_df = copy.deepcopy(new_time_series_like_df)
 
     def merge_existing_df_datetime_df(existing_df: pd.DataFrame):
         index = existing_df.index
@@ -49,19 +50,19 @@ def merge_two_time_series_df(main_time_series_df: pd.DataFrame,
         return existing_df.join(datetime_df)
 
     # 预处理，生成新df
-    merge_main_time_series_df_datetime_df = merge_existing_df_datetime_df(main_time_series_df)
-    merge_new_time_series_df_datetime_df = merge_existing_df_datetime_df(new_time_series_df)
+    merge_main_time_series_df_datetime_df = merge_existing_df_datetime_df(main_time_series_like_df)
+    merge_new_time_series_df_datetime_df = merge_existing_df_datetime_df(new_time_series_like_df)
 
     # new_time_series_df精度比main_time_series_df低的情况
-    if (new_time_series_df.index[1] - new_time_series_df.index[0]) >= \
-            (main_time_series_df.index[1] - main_time_series_df.index[0]):
+    if (new_time_series_like_df.index[1] - new_time_series_like_df.index[0]) >= \
+            (main_time_series_like_df.index[1] - main_time_series_like_df.index[0]):
         merge_main_time_series_df_new_time_series_df = pd.merge(merge_main_time_series_df_datetime_df,
                                                                 merge_new_time_series_df_datetime_df,
                                                                 on=['year', 'month', 'day', 'hour', 'minute', 'second'],
                                                                 how='left')
         merge_main_time_series_df_new_time_series_df.drop(columns=['year', 'month', 'day', 'hour', 'minute', 'second'],
                                                           inplace=True)
-        merge_main_time_series_df_new_time_series_df.set_index(main_time_series_df.index, inplace=True)
+        merge_main_time_series_df_new_time_series_df.set_index(main_time_series_like_df.index, inplace=True)
         if do_interpolate:
             merge_main_time_series_df_new_time_series_df.interpolate(method=interpolate_method, inplace=True)
     # TODO new_time_series_df精度比main_time_series_df高的情况。这里需要aggregate
