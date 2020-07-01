@@ -1,6 +1,10 @@
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from BivariateAnalysis_Class import Bivariate
 from typing import Callable
+from NdarraySubclassing import OneDimensionNdarray, ndarray
+import numpy as np
+from typing import Union
+from Ploting.fast_plot_Func import *
 
 
 class CorrelationFuncMapperMeta(type):
@@ -33,3 +37,14 @@ class BivariateCorrelationAnalyser(CorrelationAnalyser, Bivariate):
         func = CorrelationFuncMapper[correlation_coefficient_name]
         return func(self.predictor_var,
                     self.dependent_var, *args, **kwargs)
+
+
+class AutoCorrelationAnalyser:
+    def __new__(cls, x: Union[OneDimensionNdarray, ndarray]):
+        x = OneDimensionNdarray(x)
+        return BivariateCorrelationAnalyser(x[:-1], x[1:])
+
+
+if __name__ == '__main__':
+    tt = np.arange(1, 11)
+    cc = AutoCorrelationAnalyser(tt)

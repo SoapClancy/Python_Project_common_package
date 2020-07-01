@@ -134,3 +134,12 @@ def pcolormesh(x: ndarray, y: ndarray, color_value: ndarray,
         return _ax.pcolormesh(x, y, color_value, **kwargs)
 
     return plot
+
+
+@show_fig
+def acorr(x: ndarray, ax=None, figure_size=(5, 5 * 0.618), **kwargs):
+    @creat_fig(size=figure_size, ax=ax)
+    def plot(_ax):
+        return _ax.acorr(x, **kwargs)
+
+    return plot

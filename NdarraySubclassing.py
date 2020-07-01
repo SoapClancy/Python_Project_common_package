@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Iterable
+from numpy import ndarray
 
 
 class ComplexNdarray(np.ndarray):
