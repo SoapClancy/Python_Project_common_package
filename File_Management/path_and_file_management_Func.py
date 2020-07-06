@@ -22,34 +22,34 @@ def try_to_find_file_if_exist_then_delete(file_):
 
 # 使用泛型函数
 @singledispatch
-def try_to_find_path_otherwise_make_one(path_):
-    assert (isinstance(path_, tuple)) or isinstance(path_, str) or isinstance(path_, Path)
+def try_to_find_folder_path_otherwise_make_one(folder_path):
+    assert (isinstance(folder_path, tuple)) or isinstance(folder_path, str) or isinstance(folder_path, Path)
 
 
-@try_to_find_path_otherwise_make_one.register(str)
-def _(path_: str):
-    if os.path.exists(path_):
+@try_to_find_folder_path_otherwise_make_one.register(str)
+def _(folder_path: str):
+    if os.path.exists(folder_path):
         return True
     else:
-        os.makedirs(path_)
+        os.makedirs(folder_path)
         return False
 
 
-@try_to_find_path_otherwise_make_one.register(tuple)
-def _(path_: Tuple[str, ...]):
-    for i in path_:
-        try_to_find_path_otherwise_make_one(i)
+@try_to_find_folder_path_otherwise_make_one.register(tuple)
+def _(folder_path: Tuple[str, ...]):
+    for i in folder_path:
+        try_to_find_folder_path_otherwise_make_one(i)
 
 
-@try_to_find_path_otherwise_make_one.register(Path)
-def _(path_: Path):
-    path_.mkdir(parents=True, exist_ok=True)
+@try_to_find_folder_path_otherwise_make_one.register(Path)
+def _(folder_path: Path):
+    folder_path.mkdir(parents=True, exist_ok=True)
 
 
-def list_all_specific_format_files_in_a_folder_path(path_: str, format_: str, order: str = 'time'):
-    files = os.listdir(path_)
+def list_all_specific_format_files_in_a_folder_path(folder_path: str, format_: str, order: str = 'time'):
+    files = os.listdir(folder_path)
     files = [x for x in files if re.search(r'\.' + format_ + '$', x)]
-    files = [path_ + x for x in files]
+    files = [folder_path + x for x in files]
     if order == 'time':
         files = sorted(files, key=lambda x: os.path.getctime(x))
     return files

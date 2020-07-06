@@ -1,7 +1,7 @@
 from scipy.stats import pearsonr, spearmanr, kendalltau
 from BivariateAnalysis_Class import Bivariate
 from typing import Callable
-from NdarraySubclassing import OneDimensionNdarray, ndarray
+from ConvenientDataType import OneDimensionNdarray, ndarray
 import numpy as np
 from typing import Union
 from Ploting.fast_plot_Func import *

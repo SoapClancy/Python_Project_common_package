@@ -1,6 +1,6 @@
 import numpy as np
 from numpy import ndarray
-from NdarraySubclassing import OneDimensionNdarray
+from ConvenientDataType import OneDimensionNdarray
 
 
 def scale_to_ymin_ymax(x: ndarray, ymin, ymax):

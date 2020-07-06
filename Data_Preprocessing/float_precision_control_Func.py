@@ -4,6 +4,27 @@ import decimal
 from decimal import Decimal
 from Data_Preprocessing import float_eps
 import copy
+from ConvenientDataType import OneDimensionNdarray, StrOneDimensionNdarray
+from typing import Tuple
+
+
+def covert_to_str_one_dimensional_ndarray(array: ndarray,
+                                          exp: str) -> StrOneDimensionNdarray:
+    """
+    Use Decimal to control the floating issues. Basic idea can be explained based on following example:
+    In: str(decimal.Decimal(1/3).quantize(decimal.Decimal('0.01')))
+    Out: '0.33'
+    """
+    array = OneDimensionNdarray(array)
+
+    def transform(x):
+        results = []
+        for i in x:
+            results.append(str(Decimal(i).quantize(Decimal(exp))))
+        return np.array(results)
+
+    transform_vectorised = np.vectorize(transform, signature='(n)->(n)')
+    return transform_vectorised(array)
 
 
 def convert_float_to_arbitrary_precision(num: float, decimal_places: int) -> float:

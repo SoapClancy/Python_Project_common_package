@@ -1,5 +1,5 @@
 from io import BytesIO
-
+import functools
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -13,18 +13,19 @@ class BufferedFigureSaver(list):
 
 
 def creat_fig(size: tuple, ax=None):
-    def wrapper(func):
+    def decorator(func):
         nonlocal ax
         if ax is None:
-            ax = plt.figure(figsize=size, constrained_layout=True)
+            plt.figure(figsize=size, constrained_layout=True)
             ax = plt.gca()
         func(ax)
         return ax
 
-    return wrapper
+    return decorator
 
 
 def show_fig(func):
+    @functools.wraps(func)
     def wrapper(*args, title: str = None,
                 x_label: str = None, y_label: str = None,
                 x_lim: tuple = None, y_lim: tuple = None,

@@ -10,6 +10,9 @@ from abc import ABCMeta, abstractmethod
 from scipy.interpolate import interp1d
 from collections import OrderedDict
 import re
+import tensorflow as tf
+import tensorflow_probability as tfp
+from ConvenientDataType import IntFloatConstructedOneDimensionNdarray
 
 
 class Univariate:
@@ -399,6 +402,22 @@ class UnivariateGaussianMixtureModel(UnivariateProbabilisticModel):
                                                                    self.gmm.weights_)
 
     @property
+    def view_as_tfp_distribution(self) -> tfp.distributions.MixtureSameFamily:
+        """
+        leverage TensorFlowProbability for further calculation
+        :return:
+        """
+        tfp_distribution = tfp.distributions.MixtureSameFamily(
+            mixture_distribution=tfp.distributions.Categorical(
+                probs=self.gmm.weights_.astype(np.float32)),
+            components_distribution=tfp.distributions.Normal(
+                loc=self.gmm.means_.squeeze().astype(np.float32),
+                scale=np.sqrt(self.gmm.covariances_.squeeze()).astype(np.float32))
+        )
+
+        return tfp_distribution
+
+    @property
     def mean_(self) -> float:
         mean_values = np.array([x for x in self.gmm.means_])
         weight_values = np.array([x for x in self.gmm.weights_])
@@ -435,14 +454,34 @@ class UnivariateGaussianMixtureModel(UnivariateProbabilisticModel):
         return pdf_value
 
     def cdf_estimate(self, x: ndarray):
-        return self.cdf_estimate_by_sampling_method(x=x, number_of_samples=10_000_000)
+        return self.view_as_tfp_distribution.cdf(x.astype(np.float32)).numpy()
 
     def cal_inverse_cdf_as_look_up_table(self, accuracy: float = 0.01) -> ndarray:
         return self.cal_inverse_cdf_as_look_up_table_by_sampling_method()
 
-    def find_nearest_inverse_cdf(self, cdf_value: Union[float, ndarray],
-                                 number_of_samples: int = 50_000) -> ndarray:
-        return self.find_nearest_inverse_ecdf_by_sampling_method(cdf_value, number_of_samples=number_of_samples)
+    def find_nearest_inverse_cdf(self, cdf_value: Union[int, float, ndarray],
+                                 number_of_samples: int = 50_000_000) -> ndarray:
+        """
+        It seems impossible to analytically calculate the 'inverse cdf' of a mixture distribution.
+        ref 1: "https://stats.stackexchange.com/questions/14481/quantiles-from-the-combination-of-normal-distributions"
+        ref 2: "http://www.awebb.info/probability/2017/05/12/quantiles-of-mixture-distributions.html#Computing-
+        quantiles-of-mixture-distributions-(of-continuous-component-distributions)"
+
+        So, there may exist two ways to calculate these by either using CDF-interpolation (needs to specify the possible
+        low or high intervals, which can be achieved by looking at he limits of component distributions) or sampling.
+
+        The tails may be long, thus leading to very a large low-high interval (but not confident), and infinite
+        interpolation points are needed.
+
+        Therefore, this function try to solve the problem by sampling.
+
+        :param cdf_value:
+        :param number_of_samples:
+        :return:
+        """
+        cdf_value = IntFloatConstructedOneDimensionNdarray(cdf_value)
+        results = np.percentile(self.sample(number_of_samples), cdf_value*100)
+        return results
 
 
 class UnivariateMixtureOfGaussianMixtureModel(UnivariateGaussianMixtureModel, UnivariateProbabilisticModel):

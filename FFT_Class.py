@@ -10,7 +10,7 @@ from enum import Enum, unique
 from pathlib import Path
 from Writting.utils import put_cached_png_into_a_docx
 from scipy.signal import stft, find_peaks
-from NdarraySubclassing import ComplexNdarray, OneDimensionNdarray
+from ConvenientDataType import ComplexNdarray, OneDimensionNdarray
 from Ploting.utils import BufferedFigureSaver
 from TimeSeries_Class import WindowedTimeSeries, TimeSeries
 from Ploting.adjust_Func import adjust_lim_label_ticks
