@@ -251,6 +251,9 @@ class UnivariateTimeSeries(TimeSeries):
         detrended_data = detrended_data.iloc[:, [0]]
         return detrended_data
 
+    def plot(self, **kwargs):
+        return time_series(x=self.index, y=self.iloc[:, 0].values, **kwargs)
+
     def plot_group_by_week(self, **kwargs):
         # 补齐第一周
         missing_recording_number = self.index.weekday[0] * self.number_of_recordings_per_day
