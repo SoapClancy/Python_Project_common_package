@@ -2,6 +2,8 @@ from io import BytesIO
 import functools
 import numpy as np
 from matplotlib import pyplot as plt
+import matplotlib.dates as mdates
+import pandas as pd
 
 
 class BufferedFigureSaver(list):
@@ -36,6 +38,8 @@ def show_fig(func):
                 save_to_buffer: bool = False,
                 legend_loc: str = 'best',
                 legend_ncol: int = 1,
+                x_axis_format=None,
+                tz=None,
                 **kwargs):
         ax = func(*args, **kwargs)
         if kwargs.get('label') is not None:
@@ -61,6 +65,11 @@ def show_fig(func):
         if isinstance(y_ticks, tuple):
             plt.yticks(*y_ticks)
         plt.grid(True)
+        # dates
+
+        if isinstance(kwargs.get('x'), pd.DatetimeIndex):
+            ax.xaxis.set_major_formatter(mdates.DateFormatter(x_axis_format,
+                                                              tz=tz))
         # 如果要存入buffer
         if save_to_buffer:
             buf = BytesIO()

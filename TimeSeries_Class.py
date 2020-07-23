@@ -1,7 +1,7 @@
 import datetime
 from Time_Processing.format_convert_Func import datetime64_ndarray_to_datetime_tuple
 from Time_Processing.datetime_utils import find_nearest_datetime_idx_in_datetime_iterable
-from Ploting.fast_plot_Func import time_series, series
+from Ploting.fast_plot_Func import *
 from typing import Tuple, Union, Callable
 import numpy as np
 import pandas as pd
@@ -21,7 +21,8 @@ def merge_two_time_series_df(main_time_series_like_df: pd.DataFrame,
                              naively_ignore_tz_info: bool = True,
                              resolution: str = 'second',
                              do_interpolate: bool = True,
-                             interpolate_method='time') -> pd.DataFrame:
+                             interpolate_method='time', *,
+                             both_tz_aware_or_not_aware: bool=False) -> pd.DataFrame:
     """
     用于合并两个XXX_time_series_df。XXX_time_series_like_df指的是以datetime作为index的pd.DataFrame。
     和TimeSeries对象不同，XXX_time_series_like_df并不需要相邻的index的间隔一样，详见TimeSeries实例的_check_ordinal_time_delta
@@ -33,10 +34,23 @@ def merge_two_time_series_df(main_time_series_like_df: pd.DataFrame,
     :param resolution: 合并的resolution，目前只支持到second
     :param do_interpolate
     :param interpolate_method
+    :param both_tz_aware_or_not_aware
     :return:
     """
     main_time_series_like_df = copy.deepcopy(main_time_series_like_df)
     new_time_series_like_df = copy.deepcopy(new_time_series_like_df)
+    if both_tz_aware_or_not_aware:
+        # truncate the new time series, then union, according to the main time series at first to improve performance
+        truncated_mask = np.bitwise_and(new_time_series_like_df.index >= main_time_series_like_df.index[0],
+                                        new_time_series_like_df.index < main_time_series_like_df.index[-1])
+        # TODO 也许这样有问题，可能因为时区之类原因导致raise。可能的解决方案是只允许输入带tz的东西。更可以加在TimeSeries上。碰到再说。
+        truncated_and_union_index = new_time_series_like_df[truncated_mask].index.union(main_time_series_like_df.index)
+        new_time_series_like_df = new_time_series_like_df.reindex(truncated_and_union_index)
+
+        if do_interpolate:
+            new_time_series_like_df = pd.DataFrame(new_time_series_like_df).interpolate(interpolate_method)
+
+    # print(new_time_series_like_df.iloc[:, -1].max() - new_time_series_like_df.iloc[:, -1].min())
 
     def merge_existing_df_datetime_df(existing_df: pd.DataFrame):
         index = existing_df.index
@@ -63,7 +77,7 @@ def merge_two_time_series_df(main_time_series_like_df: pd.DataFrame,
         merge_main_time_series_df_new_time_series_df.drop(columns=['year', 'month', 'day', 'hour', 'minute', 'second'],
                                                           inplace=True)
         merge_main_time_series_df_new_time_series_df.set_index(main_time_series_like_df.index, inplace=True)
-        if do_interpolate:
+        if all((not both_tz_aware_or_not_aware, do_interpolate)):
             merge_main_time_series_df_new_time_series_df.interpolate(method=interpolate_method, inplace=True)
     # TODO new_time_series_df精度比main_time_series_df高的情况。这里需要aggregate
     else:
@@ -99,6 +113,7 @@ class TimeSeries(pd.DataFrame):
             raise Exception("Time series data must use pd.DatetimeIndex as index")
         self._check_ordinal_time_delta()
 
+    @property
     def view_as_dataframe(self):
         """
         配合pycharm的scientific mode显示

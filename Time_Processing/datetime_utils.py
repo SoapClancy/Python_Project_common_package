@@ -68,16 +68,17 @@ def datetime_one_hot_encoder(_datetime: Iterable[np.datetime64], *,
 class DatetimeOnehotEncoder:
     __slots__ = ('encoding_df_template',)
 
-    def __init__(self, to_encoding_args=('month', 'day', 'weekday', 'holiday', 'hour', 'minute')):
+    def __init__(self, to_encoding_args=('month', 'day', 'weekday', 'holiday', 'hour', 'minute', 'summer_time')):
         """
         设置哪些变量需要被encode，可选包括：
         'month' 👉 12 bit，
         'day' 👉 31 bit，
         'weekday' 👉 7 bit，
-        'holiday' 👉 2 bit，
+        'holiday' 👉 1 bit，
         'hour' 👉 24 bit，
         'minute' 👉 60 bit，
         'second' 👉 60 bit，
+        'summer_time 👉 1 bit.
         TODO：支持year。方法是让用户给定最小年和最大年，然后动态生成year对应的bit数
         e.g., to_encoding_args=('month', 'day', 'weekday', 'holiday', 'hour', 'minute', 'second')
         """
@@ -95,13 +96,15 @@ class DatetimeOnehotEncoder:
             if this_to_encoding_args == 'weekday':
                 columns.extend(list(product(('weekday',), range(1, 8))))  # 从1开始，实际是isoweekday，1代表Monday
             if this_to_encoding_args == 'holiday':
-                columns.extend(list(product(('holiday',), range(2))))
+                columns.extend(list(product(('holiday',), [1])))
             if this_to_encoding_args == 'hour':
                 columns.extend(list(product(('hour',), range(24))))
             if this_to_encoding_args == 'minute':
                 columns.extend(list(product(('minute',), range(60))))
             if this_to_encoding_args == 'second':
                 columns.extend(list(product(('second',), range(60))))
+            if this_to_encoding_args == 'summer_time':
+                columns.extend(list(product(('summer_time',), [1])))
         encoding_df = pd.DataFrame(columns=pd.MultiIndex.from_tuples(columns))
         return encoding_df
 
@@ -118,11 +121,14 @@ class DatetimeOnehotEncoder:
         required_dim_index = dict()
         for this_datetime_dim in self.encoding_df_template.columns.levels[0]:
             if this_datetime_dim != 'weekday':
-                if this_datetime_dim != 'holiday':
+                if (this_datetime_dim != 'holiday') and (this_datetime_dim != 'summer_time'):
                     required_dim_index.setdefault(this_datetime_dim, datetime_like.__getattribute__(this_datetime_dim))
+                elif this_datetime_dim == 'summer_time':
+                    summer_time_results = np.array(list(map(lambda x: 1 if x.dst() else 0,
+                                                            datetime_like)))
+                    required_dim_index.setdefault(this_datetime_dim, summer_time_results)
                 else:
                     holiday_results = np.array(list(map(lambda x: country.is_holiday(x), datetime_like)))
-                    holiday_results = holiday_results.astype(int)
                     required_dim_index.setdefault(this_datetime_dim, holiday_results)
             else:
                 required_dim_index.setdefault(this_datetime_dim, datetime_like.__getattribute__(this_datetime_dim) + 1)
