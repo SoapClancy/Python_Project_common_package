@@ -130,21 +130,22 @@ class BayesCOVN1DLSTM:
 
 
 class SimpleLSTM(nn.Module):
-    def __init__(self, input_size: int, hidden_size: int, output_size: int):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, device='cuda:0'):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
 
         self.lstm_layer = nn.LSTM(input_size, hidden_size, num_layers=1, batch_first=True)
-        self.linear_layer = nn.Linear(hidden_size, output_size)
-        self.cuda()
+        self.linear_layer_out = nn.Linear(hidden_size, output_size)
+        if 'cuda' in device:
+            self.cuda()
 
     def forward(self, x):
         # 这里r_out shape永远是(seq, batch, output_size)，与网络的batch_first参数无关
         r_out, (h_n, h_c) = self.lstm_layer(x, None)
         # 如果网络的batch_first = True，这里out的shape就是(batch, seq, output_size)
         # 否则，这里out的shape就是(seq, batch, output_size)
-        out = self.linear_layer(r_out)
+        out = self.linear_layer_out(r_out)
         return out
 
     def init_hidden(self, x):
@@ -153,17 +154,135 @@ class SimpleLSTM(nn.Module):
         return h_0, c_0
 
 
+class LSTMEncoder(nn.Module):
+    def __init__(self, *, lstm_num_layers: int = 1,
+                 input_feature_len: int,
+                 output_feature_len: int,
+                 sequence_len: int,
+                 hidden_size: int,
+                 bidirectional: bool = False,
+                 dropout: float = 0.1):
+        super().__init__()
+        self.sequence_len = sequence_len
+        self.hidden_size = hidden_size
+        self.input_feature_len = input_feature_len
+        self.output_feature_len = output_feature_len
+        self.num_layers = lstm_num_layers
+        self.direction = 2 if bidirectional else 1
+
+        self.lstm_layer = nn.LSTM(input_feature_len,
+                                  hidden_size,
+                                  num_layers=lstm_num_layers,
+                                  batch_first=True,
+                                  bidirectional=bidirectional,
+                                  dropout=dropout)
+
+        self.decoder_first_input_dense = nn.Linear(hidden_size, output_feature_len)
+
+        self.cuda()
+
+    def forward(self, x):
+        lstm_output, (h_n, c_n) = self.lstm_layer(x)
+
+        # lstm_output sum-reduced by direction
+        lstm_output = lstm_output.view(x.size(0), self.sequence_len, self.direction, self.hidden_size)
+        lstm_output = lstm_output.sum(2)
+
+        # lstm_states sum-reduced by direction
+        h_n = h_n.view(self.num_layers, self.direction, x.size(0), self.hidden_size)
+        c_n = c_n.view(self.num_layers, self.direction, x.size(0), self.hidden_size)
+
+        # Only use the information from the last layer
+        h_n, c_n = h_n[-1], c_n[-1]
+        h_n, c_n = h_n.sum(0), c_n.sum(0)
+
+        return lstm_output, (h_n, c_n), self.decoder_first_input_dense(h_n)
+
+    def init_hidden(self, x):
+        h_0 = torch.zeros(self.num_layers * self.direction, x.size(0), self.hidden_size, device='cuda:0')
+        c_0 = torch.zeros(self.num_layers * self.direction, x.size(0), self.hidden_size, device='cuda:0')
+
+        return h_0, c_0
+
+
+class LSTMCellDecoder(nn.Module):
+    def __init__(self, *,
+                 output_feature_len: int,
+                 hidden_size: int,
+                 dropout: float = 0.1):
+        super().__init__()
+        self.lstm_cell = nn.LSTMCell(
+            input_size=output_feature_len,
+            hidden_size=hidden_size
+        )
+        # 我觉得应该hidden_size*2，因为lstm cell输出有两个状态h_n, c_n
+        self.out = nn.Linear(hidden_size, output_feature_len)
+        # TODO attention
+        self.attention = False
+        self.dropout = nn.Dropout(dropout)
+        self.cuda()
+
+    def forward(self, y, prev_h_n_and_c_n_tuple: tuple) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        h_n, c_n = self.lstm_cell(y, prev_h_n_and_c_n_tuple)
+        output = self.out(h_n)
+        h_n_c_n_cat = self.dropout(torch.cat((h_n, c_n), 1))
+        return output, (h_n_c_n_cat[:, :int(h_n_c_n_cat.size(1) / 2)], h_n_c_n_cat[:, int(h_n_c_n_cat.size(1) / 2):])
+
+
+class LSTMEncoderDecoderWrapper(nn.Module):
+    def __init__(self, *, lstm_encoder: LSTMEncoder,
+                 lstm_decoder_cell: LSTMCellDecoder,
+                 teacher_forcing: float = 0.3,
+                 output_sequence_len: int,
+                 output_feature_len: int,
+                 decoder_input=True):
+        super().__init__()
+        self.lstm_encoder = lstm_encoder  # type: LSTMEncoder
+        self.lstm_decoder_cell = lstm_decoder_cell  # type: LSTMCellDecoder
+        self.teacher_forcing = teacher_forcing
+        self.output_sequence_len = output_sequence_len
+        self.output_feature_len = output_feature_len
+        self.decoder_input = decoder_input
+        self.cuda()
+
+    def forward(self, x, y=None):
+        outputs = torch.zeros(x.size(0), self.output_sequence_len, self.output_feature_len, device='cuda:0')
+        _, (encoder_h_n, encoder_c_n), decoder_first_input = self.lstm_encoder(x)
+        prev_h_n_and_c_n_tuple = (encoder_h_n, encoder_c_n)
+        lstm_decoder_cell_output = None
+        for i in range(self.output_sequence_len):
+            if i == 0:
+                step_decoder_input = decoder_first_input
+            else:
+                if (y is not None) and (torch.rand(1).item() < self.teacher_forcing):
+                    step_decoder_input = y[:, i - 1, :]
+                else:
+                    step_decoder_input = lstm_decoder_cell_output
+
+            lstm_decoder_cell_output, prev_h_n_and_c_n_tuple = self.lstm_decoder_cell(step_decoder_input,
+                                                                                      prev_h_n_and_c_n_tuple)
+            outputs[:, i, :] = lstm_decoder_cell_output
+        return outputs
+
+
 class StackedBiLSTM(SimpleLSTM):
-    def __init__(self, input_size: int, hidden_size: int, output_size: int, *, dropout: float):
-        super().__init__(input_size, hidden_size, output_size)
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, *,
+                 dropout: float, device='cuda:0', sequence_len: int = None):
+        super().__init__(input_size, hidden_size, output_size, device=device)
+        self.direction = 2
+        self.num_layers = 3
+        self.sequence_len = sequence_len
+
+        # self.linear_layer_in = nn.Linear(input_size, output_size)
         self.lstm_layer = nn.LSTM(input_size,
                                   hidden_size,
                                   num_layers=3,
                                   batch_first=True,
                                   bidirectional=True,
                                   dropout=dropout)
-        self.linear_layer = nn.Linear(hidden_size * 2, output_size)
-        self.cuda()
+        self.linear_layer_out = nn.Linear(hidden_size * 2, output_size)
+        if 'cuda' in device:
+            self.cuda()
 
 
 class MatlabLSTM:
