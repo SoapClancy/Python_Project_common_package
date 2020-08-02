@@ -130,7 +130,7 @@ class BayesCOVN1DLSTM:
 
 class StackedBiLSTM(torch.nn.Module):
     def __init__(self, *,
-                 lstm_layer_num: int,
+                 lstm_layer_num: int = 3,
                  input_feature_len: int,
                  output_feature_len: int,
                  hidden_size: int,
@@ -156,6 +156,12 @@ class StackedBiLSTM(torch.nn.Module):
         out = self.linear_layer(lstm_layer_out)
         return out
 
+    def set_train(self):
+        self.train()
+
+    def set_eval(self):
+        self.eval()
+
 
 class SimpleLSTM(StackedBiLSTM):
     def __init__(self, input_feature_len: int, hidden_size: int, output_feature_len: int, sequence_len: int = None):
@@ -168,10 +174,10 @@ class SimpleLSTM(StackedBiLSTM):
                          sequence_len=sequence_len)
 
 
-class LSTMEncoder(torch.nn.Module):
-    def __init__(self, *, lstm_layer_num: int = 1,
+class GRUEncoder(torch.nn.Module):
+    def __init__(self, *,
+                 gru_layer_num: int = 1,
                  input_feature_len: int,
-                 output_feature_len: int,
                  sequence_len: int,
                  hidden_size: int,
                  bidirectional: bool = False,
@@ -180,149 +186,166 @@ class LSTMEncoder(torch.nn.Module):
         super().__init__()
         self.sequence_len = sequence_len
         self.hidden_size = hidden_size
-        self.input_feature_len = input_feature_len
-        self.output_feature_len = output_feature_len
-        self.lstm_layer_num = lstm_layer_num
+        self.lstm_layer_num = gru_layer_num
         self.direction = 2 if bidirectional else 1
 
-        self.lstm_layer = torch.nn.LSTM(input_feature_len,
-                                        hidden_size,
-                                        num_layers=lstm_layer_num,
-                                        batch_first=True,
-                                        bidirectional=bidirectional,
-                                        dropout=dropout)
+        self.gru_layer = torch.nn.GRU(input_feature_len,
+                                      hidden_size,
+                                      num_layers=gru_layer_num,
+                                      batch_first=True,
+                                      bidirectional=bidirectional,
+                                      dropout=dropout)
+
         self.device = device
         if "cuda" in device:
             self.cuda()
 
     def forward(self, x):
-        lstm_output, (h_n, c_n) = self.lstm_layer(x)
+        gru_output, h_n = self.gru_layer(x)
 
         # lstm_output sum-reduced by direction
-        lstm_output = lstm_output.view(x.size(0), self.sequence_len, self.direction, self.hidden_size)
-        lstm_output = lstm_output.sum(2)
+        gru_output = gru_output.view(x.size(0), self.sequence_len, self.direction, self.hidden_size)
+        gru_output = gru_output.sum(2)
 
         # lstm_states sum-reduced by direction
         h_n = h_n.view(self.lstm_layer_num, self.direction, x.size(0), self.hidden_size)
-        c_n = c_n.view(self.lstm_layer_num, self.direction, x.size(0), self.hidden_size)
+        h_n = h_n.sum(1)
 
-        # Only use the information from the last layer
-        # h_n, c_n = h_n[-1], c_n[-1]
-        h_n, c_n = h_n.sum(1), c_n.sum(1)
+        return gru_output, h_n
 
-        return lstm_output, (h_n, c_n)
-
-    def init_hidden(self, batch_size: int) -> tuple:
+    def init_hidden(self, batch_size: int):
         h_0 = torch.zeros(self.lstm_layer_num * self.direction, batch_size, self.hidden_size, device=self.device)
-        c_0 = torch.zeros(self.lstm_layer_num * self.direction, batch_size, self.hidden_size, device=self.device)
-
-        return h_0, c_0
+        return h_0
 
 
-class Attention(torch.nn.Module):
-    def __init__(self,
-                 lstm_encoder_hidden_size,
+class BahdanauAttention(torch.nn.Module):
+    def __init__(self, *,
+                 hidden_size: int,
                  units: int,
-                 device="cuda"):
+                 device="cuda",
+                 mode_source: str = 'custom'):
         super().__init__()
-        self.W1 = torch.nn.Linear(lstm_encoder_hidden_size, units)
-        self.W2 = torch.nn.Linear(lstm_encoder_hidden_size, units)
+        if mode_source not in ('custom', 'nlp'):
+            raise NotImplementedError
+        self.mode_source = mode_source
+        self.W1 = torch.nn.Linear(hidden_size, units)
+        self.W2 = torch.nn.Linear(hidden_size, units)
         self.V = torch.nn.Linear(units, 1)
 
         self.device = device
         if "cuda" in device:
             self.cuda()
 
-    def forward(self, lstm_encoder_output, lstm_encoder_h_n):
-        score = self.V(torch.tanh(self.W1(lstm_encoder_h_n.unsqueeze(1)) + self.W2(lstm_encoder_output)))
+    def forward(self, encoder_output, last_layer_h_n):
+        score = self.V(torch.tanh(self.W1(encoder_output) + self.W2(last_layer_h_n.unsqueeze(1))))
         attention_weights = torch.nn.functional.softmax(score, 1)
-
-        context_vector = attention_weights * lstm_encoder_output
-        context_vector = context_vector.sum(1)
+        if self.mode_source == 'mode_source':
+            context_vector = attention_weights * encoder_output
+            context_vector = context_vector.sum(1)
+        else:
+            context_vector = None
+        """
+        ax = series(context_vector.squeeze().detach().cpu().numpy(), label='context_vector')
+        series(last_layer_h_n.squeeze().detach().cpu().numpy(), ax=ax, label='last_layer_h_n')
+        series(attention_weights.squeeze().detach().cpu().numpy(), title='attention_weights')
+        """
+        tt = 1
         return context_vector, attention_weights
 
 
-class LSTMCellDecoder(torch.nn.Module):
+class GRUDecoder(torch.nn.Module):
     def __init__(self, *,
-                 output_feature_len: int,
-                 hidden_size: int,
-                 dropout: float = 0.1):
-        super().__init__()
-        self.lstm_cell = torch.nn.LSTMCell(
-            input_size=output_feature_len,
-            hidden_size=hidden_size
-        )
-        # 我觉得应该hidden_size*2，因为lstm cell输出有两个状态h_n, c_n
-        self.out = torch.nn.Linear(hidden_size, output_feature_len)
-        self.dropout = torch.nn.Dropout(dropout)
-        self.cuda()
-
-    def forward(self, y, prev_h_n_and_c_n_tuple: tuple) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        h_n, c_n = self.lstm_cell(y, prev_h_n_and_c_n_tuple)
-        output = self.out(h_n)
-        h_n_c_n_cat = self.dropout(torch.cat((h_n, c_n), 1))
-        return output, (h_n_c_n_cat[:, :int(h_n_c_n_cat.size(1) / 2)], h_n_c_n_cat[:, int(h_n_c_n_cat.size(1) / 2):])
-
-
-class LSTMDecoder(torch.nn.Module):
-    def __init__(self, *,
-                 lstm_layer_num: int = 1,
+                 gru_layer_num: int = 1,
                  decoder_input_feature_len: int,
                  output_feature_len: int,
                  hidden_size: int,
-                 lstm_hidden_size: int,
                  bidirectional: bool = False,
                  dropout: float = 0.1,
                  attention_units: int = 128,
+                 mode_source: str = 'custom',
                  device="cuda"):
         super().__init__()
-        self.lstm_layer = torch.nn.LSTM(decoder_input_feature_len,
-                                        hidden_size,
-                                        num_layers=lstm_layer_num,
-                                        batch_first=True,
-                                        bidirectional=bidirectional,
-                                        dropout=dropout)
+        if mode_source not in ('custom', 'nlp'):
+            raise NotImplementedError
+        else:
+            self.mode_source = mode_source
+        self.lstm_layer_num = gru_layer_num
+        self.direction = 2 if bidirectional else 1
+        self.hidden_size = hidden_size
 
-        self.attention = Attention(lstm_hidden_size, attention_units)
+        self.gru_layer = torch.nn.GRU(decoder_input_feature_len,
+                                      hidden_size,
+                                      num_layers=gru_layer_num,
+                                      batch_first=True,
+                                      bidirectional=bidirectional,
+                                      dropout=dropout)
+
+        self.attention = BahdanauAttention(
+            hidden_size=hidden_size,
+            units=attention_units
+        )  # type: BahdanauAttention
 
         self.out = torch.nn.Linear(hidden_size, output_feature_len)
-
         self.device = device
         if "cuda" in device:
             self.cuda()
 
-    def forward(self, y, lstm_encoder_output, h_n, c_n):
-        context_vector, attention_weights = self.attention(lstm_encoder_output,
-                                                           h_n[-1])  # Only use last layer for attention
-        y = torch.cat((context_vector.unsqueeze(1), y.unsqueeze(1)), -1)
-        lstm_output, (h_n, c_n), = self.lstm_layer(y, (h_n, c_n))
-        output = self.out(lstm_output.squeeze(1))
-        return output, (h_n, c_n), attention_weights
+    def forward(self, *, y, encoder_output, h_n, this_time_step: int = None):
+        # Only use the hidden information from the last layer for attention
+        context_vector, attention_weights = self.attention(encoder_output, h_n[-1])
+        if self.mode_source == 'nlp':
+            y = torch.cat((context_vector.unsqueeze(1), y.unsqueeze(1)), -1)
+        ###############################################################################################################
+        else:
+            attention_weights = (attention_weights - attention_weights.min(1, keepdim=True).values) / (
+                    attention_weights.max(1, keepdim=True).values - attention_weights.min(1, keepdim=True).values)
+            y = encoder_output * attention_weights
+        gru_output, h_n = self.gru_layer(y[:, this_time_step, :].unsqueeze(1), h_n)
+        ###############################################################################################################
+        # else:
+        #     where_max = attention_weights.argmax(1)
+        #     y = torch.zeros((encoder_output.size(0), 1, encoder_output.size(2)), device=self.device)
+        #     for this_batch_index in range(where_max.size(0)):
+        #         y[this_batch_index] = encoder_output[this_batch_index, where_max[this_batch_index], :]
+        # gru_output, h_n = self.gru_layer(y, h_n)
+        ###############################################################################################################
+
+        output = self.out(gru_output.squeeze(1))
+        return output, h_n, attention_weights
+
+    def init_hidden(self, batch_size: int):
+        h_0 = torch.zeros(self.lstm_layer_num * self.direction, batch_size, self.hidden_size, device=self.device)
+        return h_0
 
 
-class LSTMEncoderDecoderWrapper(torch.nn.Module):
-    def __init__(self, *, lstm_encoder: LSTMEncoder,
-                 lstm_decoder: LSTMDecoder,
+class GRUEncoderDecoderWrapper(torch.nn.Module):
+    def __init__(self, *, gru_encoder: GRUEncoder,
+                 gru_decoder: GRUDecoder,
                  output_sequence_len: int,
                  output_feature_len: int,
-                 decoder_input=True,
                  teacher_forcing: float = 0.001,
-                 device="cuda"):
+                 device="cuda",
+                 mode_source: str = 'custom'):
         super().__init__()
-        self.lstm_encoder = lstm_encoder  # type: LSTMEncoder
-        self.lstm_decoder = lstm_decoder  # type: LSTMDecoder
+        if mode_source not in ('custom', 'nlp'):
+            raise NotImplementedError
+        else:
+            self.mode_source = mode_source
+        self.gru_encoder = gru_encoder  # type: GRUEncoder
+        self.gru_decoder = gru_decoder  # type: GRUDecoder
         self.output_sequence_len = output_sequence_len
         self.output_feature_len = output_feature_len
-        self.decoder_input = decoder_input
         self.teacher_forcing = teacher_forcing
         self.device = device
         if "cuda" in device:
             self.cuda()
 
     def forward(self, x, y=None):
-        encoder_output, (encoder_h_n, encoder_c_n) = self.lstm_encoder(x)
+        encoder_output, encoder_h_n = self.gru_encoder(x)
+        # if self.mode_source == 'custom':
+        #     decoder_h_n = self.gru_decoder.init_hidden(x.size(0))
+        # else:
         decoder_h_n = encoder_h_n
-        decoder_c_n = encoder_c_n
         outputs = torch.zeros((x.size(0), self.output_sequence_len, self.output_feature_len),
                               device=self.device)
         this_time_step_decoder_output = None
@@ -336,11 +359,11 @@ class LSTMEncoderDecoderWrapper(torch.nn.Module):
                 else:
                     this_time_step_decoder_input = this_time_step_decoder_output
 
-            this_time_step_decoder_output, (decoder_h_n, decoder_c_n), _ = self.lstm_decoder(
-                this_time_step_decoder_input,
-                encoder_output,
-                decoder_h_n,
-                decoder_c_n
+            this_time_step_decoder_output, decoder_h_n, _ = self.gru_decoder(
+                y=this_time_step_decoder_input,
+                encoder_output=encoder_output,
+                h_n=decoder_h_n,
+                this_time_step=i
             )
 
             outputs[:, i, :] = this_time_step_decoder_output
@@ -348,13 +371,13 @@ class LSTMEncoderDecoderWrapper(torch.nn.Module):
         return outputs
 
     def set_train(self):
-        self.lstm_encoder.train()
-        self.lstm_decoder.train()
+        self.gru_encoder.train()
+        self.gru_decoder.train()
         self.train()
 
     def set_eval(self):
-        self.lstm_encoder.eval()
-        self.lstm_decoder.eval()
+        self.gru_encoder.eval()
+        self.gru_decoder.eval()
         self.eval()
 
 

@@ -6,7 +6,7 @@ from typing import Union
 import datetime
 import matplotlib.dates as mdates
 
-from Ploting.utils import creat_fig, show_fig
+from .utils import creat_fig, show_fig
 
 
 @show_fig
@@ -65,7 +65,7 @@ def stem(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5
         kwargs.setdefault('markerfmt', ' ')
         kwargs.setdefault('basefmt', ' ')
         if y is None:
-            y = np.arange(0, x.size)
+            y = np.arange(0, len(x))
             return _ax.stem(y, x, color, use_line_collection=True, **kwargs)
         else:
             return _ax.stem(x, y, color, use_line_collection=True, **kwargs)

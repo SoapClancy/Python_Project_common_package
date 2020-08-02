@@ -28,10 +28,16 @@ class TruncatedToLinear:
 class CircularToLinear:
     __slots__ = ('lower_boundary', 'upper_boundary', 'period')
 
-    def __init__(self, lower_boundary: Union[float, int], upper_boundary: Union[float, int], period: Union[float, int]):
+    def __init__(self, lower_boundary: Union[float, int] = None,
+                 upper_boundary: Union[float, int] = None,
+                 *, period: Union[float, int]):
         self.lower_boundary = lower_boundary
         self.upper_boundary = upper_boundary
         self.period = period
 
     def transform(self, x: ndarray):
-        return np.cos(2 * np.pi * x / self.period), np.sin(2 * np.pi * x / self.period)
+        return {'cos': np.cos(2 * np.pi * x / self.period),
+                'sin': np.sin(2 * np.pi * x / self.period)}
+
+    def __call__(self, x: ndarray):
+        return self.transform(x)

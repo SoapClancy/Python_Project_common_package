@@ -3,13 +3,17 @@ import time
 from .format_convert_Func import datetime64_ndarray_to_datetime_tuple
 from numpy import ndarray
 import numpy as np
-from typing import Iterable, Union
+from typing import Iterable, Union, Callable
 import pandas as pd
 from pandas import DataFrame
 from itertools import product
 from datetime import datetime
 import copy
 from datetime import date
+from Data_Preprocessing.TruncatedOrCircularToLinear_Class import CircularToLinear
+
+
+# from Ploting.fast_plot_Func import *
 
 
 def get_holiday_from_datetime64_ndarray(_datetime: Iterable[np.datetime64]):
@@ -65,10 +69,11 @@ def datetime_one_hot_encoder(_datetime: Iterable[np.datetime64], *,
     return one_hot_results
 
 
-class DatetimeOnehotEncoder:
-    __slots__ = ('encoding_df_template',)
+class DatetimeOnehotORCircularEncoder:
+    __slots__ = ('encoding_df_template', '__mode_property')
 
-    def __init__(self, to_encoding_args=('month', 'day', 'weekday', 'holiday', 'hour', 'minute', 'summer_time')):
+    def __init__(self, to_encoding_args=('month', 'day', 'weekday', 'holiday', 'hour', 'minute', 'summer_time'),
+                 mode: str = "onehot"):
         """
         设置哪些变量需要被encode，可选包括：
         'month' 👉 12 bit，
@@ -82,31 +87,61 @@ class DatetimeOnehotEncoder:
         TODO：支持year。方法是让用户给定最小年和最大年，然后动态生成year对应的bit数
         e.g., to_encoding_args=('month', 'day', 'weekday', 'holiday', 'hour', 'minute', 'second')
         """
+        self.__mode_property = mode
         self.encoding_df_template = self._initialise_encoding_df(to_encoding_args)
+        if mode not in ("onehot", "circular"):
+            raise ValueError("'mode' should be either 'onehot' or 'circular'")
 
-    @staticmethod
-    def _initialise_encoding_df(to_encoding_args) -> DataFrame:
+    @property
+    def mode(self):
+        return self.__mode_property
+
+    def _initialise_encoding_df(self, to_encoding_args) -> DataFrame:
         # 动态初始化encoding_df
         columns = []
-        for this_to_encoding_args in to_encoding_args:
-            if this_to_encoding_args == 'month':
-                columns.extend(list(product(('month',), range(1, 13))))  # 从1开始
-            if this_to_encoding_args == 'day':
-                columns.extend(list(product(('day',), range(1, 32))))  # 从1开始
-            if this_to_encoding_args == 'weekday':
-                columns.extend(list(product(('weekday',), range(1, 8))))  # 从1开始，实际是isoweekday，1代表Monday
-            if this_to_encoding_args == 'holiday':
-                columns.extend(list(product(('holiday',), [1])))
-            if this_to_encoding_args == 'hour':
-                columns.extend(list(product(('hour',), range(24))))
-            if this_to_encoding_args == 'minute':
-                columns.extend(list(product(('minute',), range(60))))
-            if this_to_encoding_args == 'second':
-                columns.extend(list(product(('second',), range(60))))
-            if this_to_encoding_args == 'summer_time':
-                columns.extend(list(product(('summer_time',), [1])))
+        if self.mode == "onehot":
+            for this_to_encoding_args in to_encoding_args:
+                if this_to_encoding_args == 'month':
+                    columns.extend(list(product(('month',), range(1, 13))))  # 从1开始
+                if this_to_encoding_args == 'day':
+                    columns.extend(list(product(('day',), range(1, 32))))  # 从1开始
+                if this_to_encoding_args == 'weekday':
+                    columns.extend(list(product(('weekday',), range(1, 8))))  # 从1开始，实际是isoweekday，1代表Monday
+                if this_to_encoding_args == 'holiday':
+                    columns.extend(list(product(('holiday',), [1])))
+                if this_to_encoding_args == 'hour':
+                    columns.extend(list(product(('hour',), range(24))))
+                if this_to_encoding_args == 'minute':
+                    columns.extend(list(product(('minute',), range(60))))
+                if this_to_encoding_args == 'second':
+                    columns.extend(list(product(('second',), range(60))))
+                if this_to_encoding_args == 'summer_time':
+                    columns.extend(list(product(('summer_time',), [1])))
+        else:
+            for this_to_encoding_args in to_encoding_args:
+                if (this_to_encoding_args == 'holiday') or this_to_encoding_args == 'summer_time':
+                    columns.extend(list(product((this_to_encoding_args,), [1])))
+                else:
+                    columns.extend(list(product((this_to_encoding_args,), ['cos', 'sin'])))
+
         encoding_df = pd.DataFrame(columns=pd.MultiIndex.from_tuples(columns))
         return encoding_df
+
+    def _circular_func(self, date_time_dim: str) -> Callable:
+        if date_time_dim == 'month':
+            period = 12
+        elif date_time_dim == 'day':
+            period = 31
+        elif date_time_dim == 'weekday':
+            period = 7
+        elif date_time_dim == 'hour':
+            period = 24
+        elif date_time_dim in ('minute', 'second'):
+            period = 60
+        else:
+            raise NotImplementedError
+
+        return CircularToLinear(period=period).transform
 
     def __call__(self, datetime_like: pd.DatetimeIndex,
                  tz=None,
@@ -120,6 +155,8 @@ class DatetimeOnehotEncoder:
         # 把索引算出来
         required_dim_index = dict()
         for this_datetime_dim in self.encoding_df_template.columns.levels[0]:
+            if (self.mode == 'circular') and (this_datetime_dim not in ('summer_time', 'holiday')):
+                continue
             if this_datetime_dim != 'weekday':
                 if (this_datetime_dim != 'holiday') and (this_datetime_dim != 'summer_time'):
                     required_dim_index.setdefault(this_datetime_dim, datetime_like.__getattribute__(this_datetime_dim))
@@ -134,6 +171,12 @@ class DatetimeOnehotEncoder:
                 required_dim_index.setdefault(this_datetime_dim, datetime_like.__getattribute__(this_datetime_dim) + 1)
         # 写入encoding_df
         for i, this_dim_name in enumerate(self.encoding_df_template.columns):
+            if (self.mode == 'circular') and (this_dim_name[0] not in ('summer_time', 'holiday')):
+                encoding_df = encoding_df.astype('float')
+                func = self._circular_func(this_dim_name[0])
+                values = datetime_like.__getattribute__(this_dim_name[0]).values
+                encoding_df[:, i] = func(values)[this_dim_name[1]]
+                continue
             # 取得这一列对应的boolean数组并转成int
             this_dim = np.array(required_dim_index[this_dim_name[0]] == this_dim_name[1], dtype=int)  # type: ndarray
             encoding_df[:, i] = this_dim
