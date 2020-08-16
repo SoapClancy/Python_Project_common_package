@@ -49,7 +49,7 @@ def series(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5,
     def plot(_ax):
         nonlocal y
         if y is None:
-            y = np.arange(0, x.size)
+            y = np.arange(0, len(x))
             return _ax.plot(y, x, **kwargs)
         else:
             return _ax.plot(x, y, **kwargs)

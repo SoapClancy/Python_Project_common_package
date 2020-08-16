@@ -63,17 +63,17 @@ class EnergyBasedError(ErrorEvaluation):
             warnings.warn("At least one 'target' or 'model_output' is nan")
 
     def do_calculation(self):
-        over_estimate_flag = self.model_output > self.target
+        over_estimate_mask = self.model_output > self.target
 
         over_estimate = np.nansum(
-            self.model_output[over_estimate_flag] - self.target[over_estimate_flag]) * self.time_step
+            self.model_output[over_estimate_mask] - self.target[over_estimate_mask]) * self.time_step
         under_estimate = np.nansum(
-            self.target[~over_estimate_flag] - self.model_output[~over_estimate_flag]) * self.time_step
+            self.target[~over_estimate_mask] - self.model_output[~over_estimate_mask]) * self.time_step
         over_minus_under_estimate = over_estimate - under_estimate
         over_plus_under_estimate = over_estimate + under_estimate
 
-        target_total_when_over = np.nansum(self.target[over_estimate_flag]) * self.time_step
-        target_total_when_under = np.nansum(self.target[~over_estimate_flag]) * self.time_step
+        target_total_when_over = np.nansum(self.target[over_estimate_mask]) * self.time_step
+        target_total_when_under = np.nansum(self.target[~over_estimate_mask]) * self.time_step
         target_total = np.nansum(self.target) * self.time_step
 
         over_estimate_in_pct = over_estimate / target_total_when_over * 100

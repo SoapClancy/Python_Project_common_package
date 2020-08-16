@@ -46,10 +46,11 @@ def _(folder_path: Path):
     folder_path.mkdir(parents=True, exist_ok=True)
 
 
-def list_all_specific_format_files_in_a_folder_path(folder_path: str, format_: str, order: str = 'time'):
+def list_all_specific_format_files_in_a_folder_path(folder_path: Path, format_: str, order: str = 'time'):
+    folder_path = folder_path.__str__()
     files = os.listdir(folder_path)
     files = [x for x in files if re.search(r'\.' + format_ + '$', x)]
-    files = [folder_path + x for x in files]
+    files = [folder_path + '\\' + x for x in files]
     if order == 'time':
         files = sorted(files, key=lambda x: os.path.getctime(x))
     return files
