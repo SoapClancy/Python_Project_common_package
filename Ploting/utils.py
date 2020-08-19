@@ -4,6 +4,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
+import seaborn as sns
+
+sns.set()
 
 
 class BufferedFigureSaver(list):
@@ -65,22 +68,12 @@ def show_fig(func):
             plt.xticks(*x_ticks)
         if isinstance(y_ticks, tuple):
             plt.yticks(*y_ticks)
-        plt.grid(False)
+        plt.grid(True)
         # dates
 
         if isinstance(kwargs.get('x'), pd.DatetimeIndex):
             ax.xaxis.set_major_formatter(mdates.DateFormatter(x_axis_format,
                                                               tz=tz))
-        if force_plot_time_series == 'day':
-            # ax.xaxis.set_major_formatter(mdates.DateFormatter('%H',
-            #                                                   tz=tz))
-            plt.xticks(np.arange(0, 24.1, 6), ['0:00', '6:00', '12:00', '18:00', '24:00'])
-
-        if force_plot_time_series == 'week':
-            # ax.xaxis.set_major_formatter(mdates.DateFormatter('%a',
-            #                                                   tz=tz))
-            plt.xticks(np.arange(0, 289, 48), ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
-
         # 如果要存入buffer
         if save_to_buffer:
             buf = BytesIO()
