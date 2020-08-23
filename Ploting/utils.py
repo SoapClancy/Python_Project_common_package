@@ -42,7 +42,6 @@ def show_fig(func):
                 legend_loc: str = 'best',
                 legend_ncol: int = 1,
                 x_axis_format=None,
-                force_plot_time_series: str = None,
                 tz=None,
                 **kwargs):
         ax = func(*args, **kwargs)

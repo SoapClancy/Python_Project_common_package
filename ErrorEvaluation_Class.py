@@ -48,6 +48,9 @@ class DeterministicError(ErrorEvaluation):
     def cal_weighted_root_mean_square_error(self) -> float:
         pass
 
+    def cal_mean_absolute_percentage_error(self) -> float:
+        return float(np.mean(np.abs((self.target - self.model_output) / self.target))) * 100
+
 
 class EnergyBasedError(ErrorEvaluation):
     __slots__ = ('time_step',)

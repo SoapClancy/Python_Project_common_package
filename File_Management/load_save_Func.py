@@ -47,6 +47,7 @@ def load_exist_npy_file_otherwise_run_and_save(file_path:Path):
 
 
 def save_pkl_file(file_path: Path, obj):
+    try_to_find_folder_path_otherwise_make_one(file_path.parent)
     file_path = str(file_path)
     try:
         with open(file_path, 'wb') as f:
