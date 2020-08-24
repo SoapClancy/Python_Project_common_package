@@ -46,7 +46,7 @@ def show_fig(func):
                 **kwargs):
         ax = func(*args, **kwargs)
         if kwargs.get('label') is not None:
-            ax.legend(loc=legend_loc, ncol=legend_ncol)
+            ax.legend(loc=legend_loc, ncol=legend_ncol, prop={'size': 10})
         plt.title(title)
         plt.xlabel(x_label)
         plt.ylabel(y_label)
