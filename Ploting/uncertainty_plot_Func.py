@@ -93,8 +93,10 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
                              **kwargs
                              )
         # Add new plotting layer for mean value
-        _ax = series(x, uncertainty_like_dataframe.iloc[-1].values,
-                     color=(0, 1, 0), linestyle='--', ax=_ax, label='Mean')
+        _ax = series(x, uncertainty_like_dataframe.iloc[-2].values,
+                     color=(0, 1, 0), linestyle='--', ax=_ax, label='SIM mean')
+        _ax = series(x, uncertainty_like_dataframe.loc['50.0'].values,
+                     color='royalblue', linestyle=':', ax=_ax, label='SIM median')
         return _ax
 
     return plot

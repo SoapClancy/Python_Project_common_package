@@ -101,9 +101,9 @@ class UncertaintyDataFrame(pd.DataFrame):
                  **kwargs):
         super().__init__(*args, **kwargs)
         StrOneDimensionNdarray(self.index.values)
-        if self.index[-1] != 'mean':
+        if (self.index[-2] != 'mean') or (self.index[-1] != 'std.'):
             raise Exception("UncertaintyDataFrame must use StrOneDimensionNdarray as index, "
-                            "and the last index should be 'mean'")
+                            "and the last two indices should be 'mean' and 'std.'")
 
     def infer_higher_half_percentiles(self, lower_half_percentiles: StrOneDimensionNdarray) -> StrOneDimensionNdarray:
         """
@@ -112,7 +112,7 @@ class UncertaintyDataFrame(pd.DataFrame):
         higher_half_percentiles = []
         for this_lower_half_percentile in lower_half_percentiles:
             this_higher_half_percentile_index = np.argmin(
-                np.abs(self.index.values[:-1].astype(np.float) - (100 - float(this_lower_half_percentile)))
+                np.abs(self.index.values[:-2].astype(np.float) - (100 - float(this_lower_half_percentile)))
             )
             higher_half_percentiles.append(self.index.values[this_higher_half_percentile_index])
         return StrOneDimensionNdarray(higher_half_percentiles)

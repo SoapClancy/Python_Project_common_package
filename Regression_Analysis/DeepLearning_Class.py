@@ -7,7 +7,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import MinMaxScaler
 from Ploting.fast_plot_Func import series, time_series, hist, scatter
 import copy
-from project_path_Var import project_path_
+from project_utils import project_path_
 from numpy import ndarray
 from File_Management.load_save_Func import load_exist_pkl_file_otherwise_run_and_save
 import os
