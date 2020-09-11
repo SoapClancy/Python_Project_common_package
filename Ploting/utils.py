@@ -35,7 +35,7 @@ def show_fig(func):
                 x_label: str = None, y_label: str = None,
                 x_lim: tuple = None, y_lim: tuple = None,
                 infer_y_lim_according_to_x_lim=False,
-                x_ticks: tuple = None, y_ticks: tuple = None,
+                x_ticks: tuple = (), y_ticks: tuple = (),
                 save_file_: str = None,
                 save_format: str = 'png',
                 save_to_buffer: bool = False,
@@ -48,8 +48,8 @@ def show_fig(func):
         if kwargs.get('label') is not None:
             ax.legend(loc=legend_loc, ncol=legend_ncol, prop={'size': 10})
         plt.title(title)
-        plt.xlabel(x_label)
-        plt.ylabel(y_label)
+        plt.xlabel(x_label, fontsize=10)
+        plt.ylabel(y_label, fontsize=10)
         if isinstance(x_lim, tuple):
             plt.xlim(*x_lim)
             if all((infer_y_lim_according_to_x_lim,
@@ -63,10 +63,8 @@ def show_fig(func):
                          np.max(y_in_x_lim) + y_resolution)
         if isinstance(y_lim, tuple):
             plt.ylim(*y_lim)
-        if isinstance(x_ticks, tuple):
-            plt.xticks(*x_ticks)
-        if isinstance(y_ticks, tuple):
-            plt.yticks(*y_ticks)
+        plt.xticks(*x_ticks, fontsize=10)
+        plt.yticks(*y_ticks, fontsize=10)
         plt.grid(True)
         # dates
 

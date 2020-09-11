@@ -38,8 +38,9 @@ def reassign_linestyles_recursively_in_ax(ax, simple_linestyles: bool = True):
 
 
 def adjust_legend_in_ax(ax, *, protocol=None, **kwargs):
+    assert (protocol in (None, 'Outside center right'))
     kwargs.setdefault('ncol', 1)
-    if protocol == 'Outside center left':
+    if protocol == 'Outside center right':
         ax.legend(bbox_to_anchor=(1, 0.5), loc="center left", **kwargs)
     else:
         kwargs.setdefault('loc', 'upper center')

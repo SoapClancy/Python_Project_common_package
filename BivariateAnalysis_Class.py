@@ -1,20 +1,21 @@
-import numpy as np
 from Filtering.simple_filtering_Func import interquartile_outlier, shut_down_outlier
-from numpy import ndarray
 from Data_Preprocessing.float_precision_control_Func import get_decimal_places_of_float, \
     convert_ndarray_to_arbitrary_precision
-from Ploting.fast_plot_Func import scatter, series
+from Ploting.fast_plot_Func import *
 from Ploting.classification_plot_Func import bivariate_classification_scatter
 from Ploting.uncertainty_plot_Func import bivariate_uncertainty_plot
 import copy
-from typing import Tuple, Callable, Union
+from typing import Tuple, Callable, Union, Iterable
 from Filtering.sklearn_novelty_and_outlier_detection_Func import use_isolation_forest, use_local_outlier_factor, \
     use_optics_maximum_size
 from UnivariateAnalysis_Class import Univariate, UnivariateGaussianMixtureModel
 from sklearn.mixture import GaussianMixture
 from UnivariateAnalysis_Class import UnivariatePDFOrCDFLike
-from Data_Preprocessing import float_eps
-from Ploting.fast_plot_Func import hist
+from ConvenientDataType import UncertaintyDataFrame, StrOneDimensionNdarray
+import warnings
+from itertools import chain
+import pandas as pd
+from Data_Preprocessing.float_precision_control_Func import covert_to_str_one_dimensional_ndarray
 
 
 class MethodOfBins:
@@ -149,29 +150,65 @@ class MethodOfBins:
                 'nearest_not_none_bin_keys': not_none_bin_keys[0],
                 'not_none_bin_keys': tuple(not_none_bin_keys)}
 
-    def cal_mob_statistic(self, statistic='mean') -> ndarray:
-        if isinstance(statistic, str) and (statistic == 'mean'):
-            mob_statistic = np.full((self.array_of_bin_boundary.shape[0], 2), np.nan)
-            mob_statistic[:, 0] = self.array_of_bin_boundary[:, 1]
-            for i, this_bin in enumerate(self.mob.values()):
-                if this_bin['this_bin_is_empty']:
-                    continue
-                else:
-                    mob_statistic[i, 1] = np.nanmean(this_bin['dependent_var_in_this_bin'])
-        elif isinstance(statistic, ndarray):
-            mob_statistic = np.full((self.array_of_bin_boundary.shape[0], statistic.size + 1), np.nan)
-            mob_statistic[:, 0] = self.array_of_bin_boundary[:, 1]
-            for i, this_bin in enumerate(self.mob.values()):
-                if this_bin['this_bin_is_empty']:
-                    continue
-                else:
-                    mob_statistic[i, 1:] = np.nanpercentile(this_bin['dependent_var_in_this_bin'], statistic * 100)
+    def cal_mob_statistic_eg_quantile(self, statistic='mean', behaviour='deprecated') -> Union[ndarray,
+                                                                                               UncertaintyDataFrame]:
+        """
+        Calculate the statistics in each bin
+        :param statistic: Can either be str or Iterable obj (to calculate the quantiles, e.g., 0.5 represents median)
+        :param behaviour: This parameter has no effect, is deprecated, and will be removed.
+        It's here for back-compatibility purpose.
+        'deprecated' is used by default and for previous codes compatibility.
+        'new' will cause the function to return a UncertaintyDataFrame obj
+        :return:
+        """
+        assert (behaviour in ('deprecated', 'new')), "behaviour must be in ('deprecated', 'new')"
+        if behaviour == 'deprecated':
+            # Deprecated
+            warnings.warn("Deprecated", DeprecationWarning)
+            if isinstance(statistic, str) and (statistic == 'mean'):
+                mob_statistic = np.full((self.array_of_bin_boundary.shape[0], 2), np.nan)
+                mob_statistic[:, 0] = self.array_of_bin_boundary[:, 1]
+                for i, this_bin in enumerate(self.mob.values()):
+                    if this_bin['this_bin_is_empty']:
+                        continue
+                    else:
+                        mob_statistic[i, 1] = np.nanmean(this_bin['dependent_var_in_this_bin'])
+            elif isinstance(statistic, Iterable):
+                mob_statistic = np.full((self.array_of_bin_boundary.shape[0], len(statistic) + 1), np.nan)
+                mob_statistic[:, 0] = self.array_of_bin_boundary[:, 1]
+                for i, this_bin in enumerate(self.mob.values()):
+                    if this_bin['this_bin_is_empty']:
+                        continue
+                    else:
+                        mob_statistic[i, 1:] = np.nanpercentile(this_bin['dependent_var_in_this_bin'],
+                                                                np.array(statistic) * 100)
+            else:
+                raise Exception('Unsupported statistic')
         else:
-            raise Exception('Unsupported statistic')
+            # New. Instead of deprecated
+            mob_statistic = UncertaintyDataFrame(index=list(
+                chain(covert_to_str_one_dimensional_ndarray(np.array(statistic) * 100, '0.001'),
+                      ['mean', 'std.'])
+            ),
+                columns=self.array_of_bin_boundary[:, 1])
+            for i, this_bin in enumerate(self.mob.values()):
+                if this_bin['this_bin_is_empty']:
+                    continue
+                else:
+                    mob_statistic.iloc[0:-2, i] = np.nanpercentile(
+                        this_bin['dependent_var_in_this_bin'], np.array(mob_statistic.index[0:-2]).astype('float')
+                    )
+                    mob_statistic.loc['mean', this_bin['this_bin_boundary'][1]] = np.nanmean(
+                        this_bin['dependent_var_in_this_bin']
+                    )
+                    mob_statistic.loc['std.', this_bin['this_bin_boundary'][1]] = np.nanstd(
+                        this_bin['dependent_var_in_this_bin']
+                    )
+
         return mob_statistic
 
     def plot_mob_statistic(self, show_scatter: bool = True, statistic='mean', ax=None, **kwargs):
-        mob_statistic = self.cal_mob_statistic(statistic)
+        mob_statistic = self.cal_mob_statistic_eg_quantile(statistic)
         scatter_color = kwargs.pop('scatter_color') if 'scatter_color' in kwargs else 'g'
         scatter_ax = scatter(self.predictor_var[self.considered_data_mask_for_mob_calculation],
                              self.dependent_var[self.considered_data_mask_for_mob_calculation],

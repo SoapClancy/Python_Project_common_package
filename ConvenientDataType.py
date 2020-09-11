@@ -1,7 +1,11 @@
 import numpy as np
-from typing import Iterable
+from typing import Iterable, Union
 from numpy import ndarray
 import pandas as pd
+from scipy.stats import norm
+import warnings
+from Ploting.fast_plot_Func import *
+from itertools import chain
 
 
 class ComplexNdarray(np.ndarray):
@@ -55,7 +59,10 @@ class StrOneDimensionNdarray(np.ndarray):
         try:
             obj = OneDimensionNdarray(input_array)
             if not isinstance(obj[0], str):
-                raise TypeError
+                if (isinstance(obj[0], float)) or (isinstance(obj[0], int)):
+                    obj = obj.astype(str)
+                else:
+                    raise TypeError
         except TypeError:
             raise TypeError(f"Expected {cls}")
         return obj
@@ -91,19 +98,37 @@ class UncertaintyDataFrame(pd.DataFrame):
 
     @property
     def _constructor_expanddim(self):
-        return pd.DataFrame
+        return NotImplementedError(f"Expanddim is not supported for {self.__class__.__name__}!")
 
     @property
     def _constructor_sliced(self):
         return pd.Series
 
+    @property
+    def pd_view(self):
+        return pd.DataFrame(self)
+
     def __init__(self, *args,
                  **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, dtype='float', **kwargs)
         StrOneDimensionNdarray(self.index.values)
-        if (self.index[-2] != 'mean') or (self.index[-1] != 'std.'):
+        if (self.index.values[-2] != 'mean') or (self.index.values[-1] != 'std.'):
             raise Exception("UncertaintyDataFrame must use StrOneDimensionNdarray as index, "
                             "and the last two indices should be 'mean' and 'std.'")
+
+    @classmethod
+    def init_from_2d_ndarray(cls, two_dim_array: ndarray, *, percentiles: ndarray = np.arange(0, 100.001, 0.001)):
+        from Data_Preprocessing.float_precision_control_Func import covert_to_str_one_dimensional_ndarray
+        percentiles = covert_to_str_one_dimensional_ndarray(percentiles, '0.001')
+        uncertainty_dataframe = pd.DataFrame(index=list(chain(percentiles, ['mean', 'std.'])),
+                                             columns=range(two_dim_array.shape[1]))
+        for i in range(two_dim_array.shape[1]):
+            uncertainty_dataframe.iloc[:, i] = np.concatenate(
+                (np.percentile(two_dim_array[:, i], percentiles.astype('float')),
+                 np.mean(two_dim_array[:, i], keepdims=True),
+                 np.std(two_dim_array[:, i], keepdims=True))
+            )
+        return cls(uncertainty_dataframe)
 
     def infer_higher_half_percentiles(self, lower_half_percentiles: StrOneDimensionNdarray) -> StrOneDimensionNdarray:
         """
@@ -116,3 +141,73 @@ class UncertaintyDataFrame(pd.DataFrame):
             )
             higher_half_percentiles.append(self.index.values[this_higher_half_percentile_index])
         return StrOneDimensionNdarray(higher_half_percentiles)
+
+    def __call__(self, preserved_data_percentage: Union[int, float] = None, *,
+                 by_sigma: Union[int, float] = None):
+        """
+        This __call__ is to select the required percentage of data. For example, if x% data are to be preserved,
+        then any data outside [(1-x)/2, 1-(1-x)/2] are to be preserved.
+        Since self is a UncertaintyDataFrame obj, it will gives two rows of data, whose indices are the closest to
+        (1-x)/2 and 1-x/2
+
+        :param preserved_data_percentage:
+        :param by_sigma:
+        :return:
+        """
+        error_msg = "Should specify either 'preserved_data_percentage' or 'preserved_data_percentage_by_sigma'"
+        assert (preserved_data_percentage != by_sigma), error_msg
+        if by_sigma is not None:
+            if by_sigma == 1:
+                preserved_data_percentage = 68.269
+            elif by_sigma == 2:
+                preserved_data_percentage = 95.450
+            elif by_sigma == 3:
+                preserved_data_percentage = 99.730
+            elif by_sigma == 4.5:
+                preserved_data_percentage = 99.999
+            else:
+                raise ValueError("'by_sigma' not in (1, 2, 3, 4.5)")
+            # preserved_data_percentage = 100 * (norm.cdf(by_sigma) - norm.cdf(-1 * by_sigma))
+
+        preserved_data_percentage = [(100 - preserved_data_percentage) / 2, 100 - (100 - preserved_data_percentage) / 2]
+        index_float = np.array(self.index[:-2]).astype('float')
+        index_select = [np.argmin(np.abs(index_float - x)) for x in preserved_data_percentage]
+        return pd.DataFrame(self).iloc[index_select, :]
+
+    def sigma_percentage_plot(self, ax=None, **kwargs):
+        x_plot = np.array(self.columns).astype(float)
+        ax = series(x_plot, self.loc['mean'], ax=ax, color=(0, 1, 0), linestyle='--', label='Mean')
+        ax = series(x_plot, self(0).iloc[0].values, ax=ax, linestyle='-',
+                    color='orange', label='Median')
+
+        ax = series(x_plot, self(by_sigma=1).iloc[0].values, ax=ax, linestyle='-',
+                    label='1' + r'$\sigma$' + ' %', color='grey')
+        ax = series(x_plot, self(by_sigma=1).iloc[1].values, ax=ax, linestyle='-',
+                    color='grey')
+        ax = scatter(x_plot, (self(by_sigma=1).iloc[0].values + self(by_sigma=1).iloc[1].values) / 2, ax=ax,
+                     label='1' + r'$\sigma$' + ' %' + '\nmean', marker='+', s=32, color='grey')
+
+        ax = series(x_plot, self(by_sigma=2).iloc[0].values, ax=ax, linestyle='--',
+                    label='2' + r'$\sigma$' + ' %', color='fuchsia')
+        ax = series(x_plot, self(by_sigma=2).iloc[1].values, ax=ax, linestyle='--',
+                    color='fuchsia')
+        ax = scatter(x_plot, (self(by_sigma=2).iloc[0].values + self(by_sigma=2).iloc[1].values) / 2, ax=ax,
+                     label='2' + r'$\sigma$' + ' %' + '\nmean', marker='x', s=16, color='fuchsia')
+
+        ax = series(x_plot, self(by_sigma=3).iloc[0].values, ax=ax, linestyle='-.',
+                    label='3' + r'$\sigma$' + ' %', color='royalblue')
+        ax = series(x_plot, self(by_sigma=3).iloc[1].values, ax=ax, linestyle='-.',
+                    color='royalblue')
+        ax = scatter(x_plot, (self(by_sigma=3).iloc[0].values + self(by_sigma=3).iloc[1].values) / 2, ax=ax,
+                     label='3' + r'$\sigma$' + ' %' + '\nmean', marker='s', s=10, color='royalblue')
+
+        ax = series(x_plot, self(by_sigma=4.5).iloc[0].values, ax=ax, linestyle=':',
+                    label='4.5' + r'$\sigma$' + ' %', color='black')
+        ax = series(x_plot, self(by_sigma=4.5).iloc[1].values, ax=ax, linestyle=':',
+                    color='black',
+                    **kwargs)
+        ax = scatter(x_plot, (self(by_sigma=4.5).iloc[0].values + self(by_sigma=4.5).iloc[1].values) / 2, ax=ax,
+                     label='4.5' + r'$\sigma$' + ' %' + '\nmean', marker='|', s=10, color='black', **kwargs)
+        # plt.gca().legend(ncol=4, loc='upper center', prop={'size': 10})
+
+        return ax
