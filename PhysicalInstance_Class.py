@@ -1,6 +1,6 @@
 import pandas as pd
 from Ploting.fast_plot_Func import *
-from typing import Tuple, Iterable, Callable
+from typing import Tuple, Iterable, Callable, List
 from collections import ChainMap
 from Filtering.OutlierAnalyser_Class import DataCategoryNameMapper, DataCategoryData
 from ConvenientDataType import StrOneDimensionNdarray
@@ -25,8 +25,8 @@ class PhysicalInstance:
 
         super().__init__(*args, **kwargs)
         self.obj_name = obj_name  # type: str
-        self.predictor_names = predictor_names  # type: Iterable
-        self.dependant_names = dependant_names  # type: Iterable
+        self.predictor_names = tuple(predictor_names)  # type: tuple
+        self.dependant_names = tuple(dependant_names)  # type: tuple
 
     def init_from_self(self, *args, **kwargs):
         """
@@ -66,6 +66,20 @@ class PhysicalInstance:
         mapper = DataCategoryNameMapper.init_from_template(rows=len(meta))
         mapper[:] = meta
         return mapper
+
+    def data_category_plot(self: Union[pd.DataFrame, pd.Series], data_category_data: DataCategoryData, ax=None):
+        if len(self.predictor_names) + len(self.dependant_names) > 2:
+            raise NotImplementedError
+        for this_category_abbreviation in np.unique(data_category_data.abbreviation):
+            this_category_abbreviation_index = data_category_data.abbreviation == this_category_abbreviation
+            if self[this_category_abbreviation_index].shape[0] == 0:
+                pass
+            else:
+                ax = scatter(self[this_category_abbreviation_index][self.predictor_names[0]].values,
+                             self[this_category_abbreviation_index][self.dependant_names[0]].values,
+                             ax=ax,
+                             label=this_category_abbreviation)
+        return ax
 
     def data_category_inside_boundary(self: Union[pd.DataFrame, pd.Series],
                                       boundary: dict, *,
@@ -107,11 +121,12 @@ class PhysicalInstance:
         boolean_array = np.full(self.__getattribute__('shape')[0], fill_value=False)
         # %% constant mode
         if constant_error is not None:
-            rolling_obj = self.concerned_data().rolling(*rolling_args, closed='left', **rolling_kwargs)
+            rolling_obj = self.concerned_data().pd_view().rolling(*rolling_args, **rolling_kwargs)
             for this_dim, this_dim_error in constant_error.items():
                 this_boolean_array = np.isclose(rolling_obj.min()[this_dim], rolling_obj.max()[this_dim],
                                                 rtol=0, atol=this_dim_error)
                 boolean_array = np.bitwise_or(boolean_array, this_boolean_array)
+            boolean_array[[0, -1]] = False
         # %% general linearity mode
         elif general_linearity_error is not None:
             def func(x, tol):
@@ -122,14 +137,14 @@ class PhysicalInstance:
                     return np.max(double_diff) - np.min(double_diff) < tol
 
             for this_dim, this_dim_error in general_linearity_error.items():
-                rolling_obj = self[this_dim].rolling(*rolling_args, closed='left', **rolling_kwargs)
+                rolling_obj = self[this_dim].rolling(*rolling_args, **rolling_kwargs)
                 this_boolean_array = rolling_obj.apply(func, raw=True,
                                                        # engine='numba',
                                                        args=(this_dim_error,)).astype(bool)
                 boolean_array = np.bitwise_or(boolean_array, this_boolean_array)
         else:
             raise Exception("Must specify 'constant_error' or 'general_linearity_error'")
-        boolean_array[0] = False
+
         return boolean_array
 
     def outlier_detector_initialiser(self, data_category_data_type: str = 'U16') -> DataCategoryData:
@@ -143,11 +158,11 @@ class PhysicalInstance:
                                    name_mapper=outlier_name_mapper,
                                    index=self.__getattribute__('index').values)
         # give it enough memory to store the string. "missing" needs > U7. The default now is U10
-        outlier.data = outlier.data.astype(data_category_data_type)
+        outlier.abbreviation = outlier.abbreviation.astype(data_category_data_type)
         # make sure only predictor_names and dependant_names are analysed
         concerned_data = self.concerned_data()
         # %% Missing value
-        outlier.data[concerned_data.isna().any(axis=1).values] = "missing"
+        outlier.abbreviation[concerned_data.isna().any(axis=1).values] = "missing"
         return outlier
 
     def outlier_detector(self, *args, **kwargs) -> DataCategoryData:
@@ -248,6 +263,17 @@ class PhysicalInstanceDataFrame(PhysicalInstance, pd.DataFrame):
                                           **kwargs).__finalize__(self)
 
         return _c
+
+    def unique(self, subset=None):
+        subset = self[subset] if subset is not None else self
+        duplicated_mask = subset.duplicated()
+        unique_rows = subset[~duplicated_mask.values]
+
+        unique_label = np.full(subset.shape[0], 0)
+        for i, (index, this_row) in enumerate(unique_rows.iterrows()):
+            eq_mask = np.all(this_row.values == subset.values, axis=1)
+            unique_label[eq_mask] = i
+        return self[~duplicated_mask], unique_label
 
 
 if __name__ == '__main__':

@@ -10,8 +10,6 @@ def try_to_find_file(file_path):
     """
     寻找结果文件。有的话就返回True，如果没有的话则返回False
     """
-    if file_path is None:
-        return None
     return os.path.isfile(file_path)
 
 

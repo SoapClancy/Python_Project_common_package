@@ -88,6 +88,24 @@ def time_series(x_axis_format="%y-%m-%d %H", tz=None, **kwargs):
 
 
 @show_fig
+def bar(*args, ax=None, autolabel_format: str = None, **kwargs):
+    @creat_fig((5, 5 * 0.618), ax)
+    def plot(_ax):
+        rects = _ax.bar(*args, **kwargs)
+        if autolabel_format is not None:
+            for rect in rects:
+                height = rect.get_height()
+                _ax.annotate(autolabel_format.format(height),
+                             xy=(rect.get_x() + rect.get_width() / 2, height),
+                             xytext=(0, 3),  # 3 points vertical offset
+                             textcoords="offset points",
+                             ha='center', va='bottom', fontsize=10)
+        return _ax
+
+    return plot
+
+
+@show_fig
 def hist(hist_data: ndarray, ax=None, **kwargs):
     @creat_fig((5, 5 * 0.618), ax)
     def plot(_ax):

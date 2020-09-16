@@ -1,11 +1,12 @@
 import numpy as np
-from typing import Iterable, Union
+from typing import Iterable, Union, Tuple
 from numpy import ndarray
 import pandas as pd
 from scipy.stats import norm
 import warnings
 from Ploting.fast_plot_Func import *
 from itertools import chain
+import re
 
 
 class ComplexNdarray(np.ndarray):
@@ -111,17 +112,35 @@ class UncertaintyDataFrame(pd.DataFrame):
     def __init__(self, *args,
                  **kwargs):
         super().__init__(*args, dtype='float', **kwargs)
+        # The index must be str
         StrOneDimensionNdarray(self.index.values)
+        # The column can be either str or int
+        if not pd.api.types.is_integer_dtype(self.columns):
+            StrOneDimensionNdarray(self.columns.values)
         if (self.index.values[-2] != 'mean') or (self.index.values[-1] != 'std.'):
             raise Exception("UncertaintyDataFrame must use StrOneDimensionNdarray as index, "
                             "and the last two indices should be 'mean' and 'std.'")
 
     @classmethod
-    def init_from_2d_ndarray(cls, two_dim_array: ndarray, *, percentiles: ndarray = np.arange(0, 100.001, 0.001)):
+    def init_from_template(cls, columns_number: int, *,
+                           percentiles: Union[None, ndarray] = np.arange(0, 100.001, 0.001)):
         from Data_Preprocessing.float_precision_control_Func import covert_to_str_one_dimensional_ndarray
-        percentiles = covert_to_str_one_dimensional_ndarray(percentiles, '0.001')
-        uncertainty_dataframe = pd.DataFrame(index=list(chain(percentiles, ['mean', 'std.'])),
-                                             columns=range(two_dim_array.shape[1]))
+        if percentiles is None:
+            percentiles = []
+        else:
+            percentiles = covert_to_str_one_dimensional_ndarray(percentiles, '0.001')
+        uncertainty_dataframe = pd.DataFrame(
+            index=list(chain(percentiles,
+                             np.array([[f'{x}_Sigma_low', f'{x}_Sigma_high'] for x in (1, 2, 3, 4.5)]).flatten(),
+                             ['mean', 'std.'])),
+            columns=range(columns_number)
+        )
+        return cls(uncertainty_dataframe)
+
+    @classmethod
+    def init_from_2d_ndarray(cls, two_dim_array: ndarray, *, percentiles: ndarray = np.arange(0, 100.001, 0.001)):
+        uncertainty_dataframe = cls.init_from_template(two_dim_array.shape[1],
+                                                       percentiles=percentiles)
         for i in range(two_dim_array.shape[1]):
             uncertainty_dataframe.iloc[:, i] = np.concatenate(
                 (np.percentile(two_dim_array[:, i], percentiles.astype('float')),
@@ -142,6 +161,12 @@ class UncertaintyDataFrame(pd.DataFrame):
             higher_half_percentiles.append(self.index.values[this_higher_half_percentile_index])
         return StrOneDimensionNdarray(higher_half_percentiles)
 
+    @staticmethod
+    def infer_percentile_boundaries_by_sigma(by_sigma: Union[int, float, str]) -> Tuple[float, float]:
+        by_sigma = float(by_sigma)
+        preserved_data_percentage = 100 * (norm.cdf(by_sigma) - norm.cdf(-1 * by_sigma))
+        return (100 - preserved_data_percentage) / 2, 100 - (100 - preserved_data_percentage) / 2
+
     def __call__(self, preserved_data_percentage: Union[int, float] = None, *,
                  by_sigma: Union[int, float] = None):
         """
@@ -157,22 +182,34 @@ class UncertaintyDataFrame(pd.DataFrame):
         error_msg = "Should specify either 'preserved_data_percentage' or 'preserved_data_percentage_by_sigma'"
         assert (preserved_data_percentage != by_sigma), error_msg
         if by_sigma is not None:
-            if by_sigma == 1:
-                preserved_data_percentage = 68.269
-            elif by_sigma == 2:
-                preserved_data_percentage = 95.450
-            elif by_sigma == 3:
-                preserved_data_percentage = 99.730
-            elif by_sigma == 4.5:
-                preserved_data_percentage = 99.999
-            else:
-                raise ValueError("'by_sigma' not in (1, 2, 3, 4.5)")
-            # preserved_data_percentage = 100 * (norm.cdf(by_sigma) - norm.cdf(-1 * by_sigma))
-
-        preserved_data_percentage = [(100 - preserved_data_percentage) / 2, 100 - (100 - preserved_data_percentage) / 2]
+            preserved_data_percentage = self.infer_percentile_boundaries_by_sigma(by_sigma)
+        else:
+            preserved_data_percentage = [(100 - preserved_data_percentage) / 2,
+                                         100 - (100 - preserved_data_percentage) / 2]
         index_float = np.array(self.index[:-2]).astype('float')
+        # TODO 向量化和插值
         index_select = [np.argmin(np.abs(index_float - x)) for x in preserved_data_percentage]
         return pd.DataFrame(self).iloc[index_select, :]
+
+    def update_one_column(self, column_name: Union[int, str], *, data: Union[OneDimensionNdarray, ndarray]):
+        data = OneDimensionNdarray(data)
+        percentile_float = []
+        for this_index in self.index[:-2]:
+            try:
+                this_percentile = float(this_index)
+            except ValueError:
+                this_sigma = re.findall(r".*(?=_Sigma)", this_index)[0]
+                if 'low' in this_index:
+                    this_percentile = self.infer_percentile_boundaries_by_sigma(this_sigma)[0]
+                else:
+                    this_percentile = self.infer_percentile_boundaries_by_sigma(this_sigma)[1]
+            percentile_float.append(this_percentile)
+        self[column_name] = np.concatenate(
+            (np.percentile(data, percentile_float),
+             np.mean(data, keepdims=True),
+             np.std(data, keepdims=True))
+        )
+        return self[column_name]
 
     def sigma_percentage_plot(self, ax=None, **kwargs):
         x_plot = np.array(self.columns).astype(float)

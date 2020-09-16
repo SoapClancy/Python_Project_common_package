@@ -1,6 +1,6 @@
 from Ploting.fast_plot_Func import *
 import pandas as pd
-from typing import Tuple
+from typing import Tuple, Iterable
 from ConvenientDataType import IntOneDimensionNdarray, StrOneDimensionNdarray
 
 
@@ -73,23 +73,26 @@ class DataCategoryNameMapper(pd.DataFrame, metaclass=DataCategoryNameMapperMeta)
 
 
 class DataCategoryData:
-    __slots__ = ('data', 'index', 'name_mapper')
+    __slots__ = ('abbreviation', 'index', 'name_mapper')
 
     def __init__(self, data: StrOneDimensionNdarray = None, *,
                  index: ndarray = None,
                  name_mapper: DataCategoryNameMapper = None):
         """
         Strongly recommended to use StrOneDimensionNdarray for all purposes including indexing and setting values
-        :param data:
+        :param data: abbreviation of category
         :param name_mapper:
         """
-        self.data = StrOneDimensionNdarray(data) if data is not None else None
+        self.abbreviation = StrOneDimensionNdarray(data) if data is not None else None
         self.index = index if index is not None else StrOneDimensionNdarray(['N/A index'])
         self.name_mapper = name_mapper  # type: DataCategoryNameMapper
 
     @property
     def pd_view(self):
-        return pd.DataFrame(self.data, index=self.index, columns=['category abbreviation'])
+        return pd.DataFrame(self.abbreviation, index=self.index, columns=['category abbreviation'])
+
+    def __call__(self, abbreviation: Union[Iterable[str], str]):
+        return np.isin(self.abbreviation, abbreviation)
 
 
 if __name__ == '__main__':
