@@ -131,7 +131,7 @@ class UncertaintyDataFrame(pd.DataFrame):
             percentiles = covert_to_str_one_dimensional_ndarray(percentiles, '0.001')
         uncertainty_dataframe = pd.DataFrame(
             index=list(chain(percentiles,
-                             np.array([[f'{x}_Sigma_low', f'{x}_Sigma_high'] for x in (1, 2, 3, 4.5)]).flatten(),
+                             np.array([[f'{x}_Sigma_low', f'{x}_Sigma_high'] for x in (1, 1.5, 2, 3, 4.5)]).flatten(),
                              ['mean', 'std.'])),
             columns=range(columns_number)
         )

@@ -47,7 +47,7 @@ def _(folder_path: Path):
 def list_all_specific_format_files_in_a_folder_path(folder_path: Path, format_: str, order: str = 'time'):
     folder_path = folder_path.__str__()
     files = os.listdir(folder_path)
-    files = [x for x in files if re.search(r'\.' + format_ + '$', x)]
+    files = [x for x in files if re.search(r'\.' + format_ + '$', x, re.IGNORECASE)]
     files = [folder_path + '\\' + x for x in files]
     if order == 'time':
         files = sorted(files, key=lambda x: os.path.getctime(x))

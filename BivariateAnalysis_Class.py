@@ -187,7 +187,8 @@ class MethodOfBins:
         else:
             # New. Instead of deprecated
             mob_statistic = UncertaintyDataFrame(index=list(
-                chain(covert_to_str_one_dimensional_ndarray(np.array(statistic) * 100, '0.001'),
+                chain(covert_to_str_one_dimensional_ndarray(
+                    np.array(statistic) * 100, '0.001') if statistic is not None else [],
                       ['mean', 'std.'])
             ),
                 columns=self.array_of_bin_boundary[:, 1])

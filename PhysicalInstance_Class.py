@@ -4,6 +4,7 @@ from typing import Tuple, Iterable, Callable, List
 from collections import ChainMap
 from Filtering.OutlierAnalyser_Class import DataCategoryNameMapper, DataCategoryData
 from ConvenientDataType import StrOneDimensionNdarray
+import copy
 
 
 class PhysicalInstance:
@@ -62,7 +63,7 @@ class PhysicalInstance:
         :return:
         """
         meta = [["missing data", "missing", -1, "N/A"],
-                ["normal data", "normal", 0, "N/A"]]
+                ["others data", "others", 0, "N/A"]]
         mapper = DataCategoryNameMapper.init_from_template(rows=len(meta))
         mapper[:] = meta
         return mapper
@@ -122,13 +123,19 @@ class PhysicalInstance:
         # %% constant mode
         if constant_error is not None:
             rolling_obj = self.concerned_data().pd_view().rolling(*rolling_args, **rolling_kwargs)
+            desired_number = int(np.nanmax(rolling_obj.count().values))
             for this_dim, this_dim_error in constant_error.items():
                 this_boolean_array = np.isclose(rolling_obj.min()[this_dim], rolling_obj.max()[this_dim],
                                                 rtol=0, atol=this_dim_error)
+                this_boolean_array[~np.all(rolling_obj.count() == desired_number, axis=1)] = False
+                this_boolean_array_protect = copy.deepcopy(this_boolean_array)
+                for i in range(desired_number):
+                    this_boolean_array = np.bitwise_or(this_boolean_array, np.roll(this_boolean_array_protect, -i))
                 boolean_array = np.bitwise_or(boolean_array, this_boolean_array)
-            boolean_array[[0, -1]] = False
+            # boolean_array[~np.all(rolling_obj.count() == desired_number, axis=1)] = False
         # %% general linearity mode
         elif general_linearity_error is not None:
+            # TODO 1) desired_number, 2) engine='numba', 3) ~np.all(rolling_obj.count() == desired_number, axis=1)
             def func(x, tol):
                 double_diff = np.diff(x, 2)
                 if double_diff.shape[0] == 0:
@@ -154,7 +161,7 @@ class PhysicalInstance:
         :return:
         """
         outlier_name_mapper = self.data_category_name_mapper
-        outlier = DataCategoryData(data=StrOneDimensionNdarray(['normal'] * self.__getattribute__('shape')[0]),
+        outlier = DataCategoryData(data=StrOneDimensionNdarray(['others'] * self.__getattribute__('shape')[0]),
                                    name_mapper=outlier_name_mapper,
                                    index=self.__getattribute__('index').values)
         # give it enough memory to store the string. "missing" needs > U7. The default now is U10

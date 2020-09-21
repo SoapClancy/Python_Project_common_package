@@ -2,6 +2,7 @@ from Ploting.fast_plot_Func import *
 import pandas as pd
 from typing import Tuple, Iterable
 from ConvenientDataType import IntOneDimensionNdarray, StrOneDimensionNdarray
+from pathlib import Path
 
 
 class DataCategoryNameMapperMeta(type):
@@ -93,6 +94,24 @@ class DataCategoryData:
 
     def __call__(self, abbreviation: Union[Iterable[str], str]):
         return np.isin(self.abbreviation, abbreviation)
+
+    def report(self, report_pd_to_csv_file_path: Path = None, *, abbreviation_rename_mapper: dict = None):
+        report_pd = pd.DataFrame(index=np.unique(self.abbreviation),
+                                 columns=['number', 'percentage'], dtype=float)
+        for this_outlier in np.unique(self.abbreviation):
+            this_outlier_number = sum(self(this_outlier))
+            report_pd.loc[this_outlier, 'number'] = this_outlier_number
+            report_pd.loc[this_outlier, 'percentage'] = this_outlier_number / self.abbreviation.shape[0] * 100
+        report_pd.rename(index=abbreviation_rename_mapper or {}, inplace=True)
+        bar(report_pd.index, report_pd['percentage'].values, y_label="Recording percentage [%]",
+            autolabel_format="{:.2f}", y_lim=(-1, 85))
+        plt.xticks(rotation=45)
+
+        bar(report_pd.index, report_pd['number'].values, y_label="Recording number",
+            autolabel_format="{:.0f}", y_lim=(-1, np.max(report_pd['number'].values) * 1.2))
+        plt.xticks(rotation=45)
+        if report_pd_to_csv_file_path is not None:
+            report_pd.to_csv(report_pd_to_csv_file_path)
 
 
 if __name__ == '__main__':
