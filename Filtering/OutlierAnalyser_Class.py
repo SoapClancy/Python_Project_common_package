@@ -1,8 +1,9 @@
 from Ploting.fast_plot_Func import *
 import pandas as pd
 from typing import Tuple, Iterable
-from ConvenientDataType import IntOneDimensionNdarray, StrOneDimensionNdarray
+from ConvenientDataType import StrOneDimensionNdarray
 from pathlib import Path
+import copy
 
 
 class DataCategoryNameMapperMeta(type):
@@ -11,7 +12,7 @@ class DataCategoryNameMapperMeta(type):
         codes = []
         for i in range(func_names.__len__()):
             codes.append(
-                f"def infer_from_{func_names[i]}(self, value: Union[str, int]) -> pd.DataFrame:\n" + \
+                f"def infer_from_{func_names[i]}(self, value: Union[str, int]) -> pd.DataFrame:\n"
                 f"    return self[self['{infer_names[i]}'] == value]"
             )
         return codes
@@ -72,33 +73,68 @@ class DataCategoryNameMapper(pd.DataFrame, metaclass=DataCategoryNameMapperMeta)
         }, index=range(rows))
         return cls(template_obj)
 
+    def convert_sequence_data_key(self, old_key_name: str, new_key_name: str, *, sequence_data):
+        """
+        An vectorised version of infer_from_...
+        :param old_key_name: str, can be one in ['long name', 'abbreviation', 'code', 'description']
+        :param new_key_name: str, can be one in ['long name', 'abbreviation', 'code', 'description']
+        :param sequence_data
+        :return:
+        """
+        assert all((old_key_name in DataCategoryNameMapper.columns_template,
+                    new_key_name in DataCategoryNameMapper.columns_template,
+                    old_key_name != new_key_name))
+        if old_key_name == 'long name':
+            func = self.__getattr__("infer_from_long_name")
+        else:
+            func = self.__getattr__(f"self.infer_from_{old_key_name}")
+
+        sequence_data = copy.deepcopy(sequence_data)
+        for this_unique_sequence_data in np.unique(sequence_data):
+            this_unique_sequence_data_mask = sequence_data == this_unique_sequence_data
+            sequence_data[this_unique_sequence_data_mask] = func(this_unique_sequence_data)[new_key_name].values[0]
+        return sequence_data
+
 
 class DataCategoryData:
     __slots__ = ('abbreviation', 'index', 'name_mapper')
 
-    def __init__(self, data: StrOneDimensionNdarray = None, *,
-                 index: ndarray = None,
-                 name_mapper: DataCategoryNameMapper = None):
+    def __init__(self, abbreviation: StrOneDimensionNdarray = None, *,
+                 index: Union[ndarray, pd.Index] = None,
+                 name_mapper: DataCategoryNameMapper):
         """
+        :param abbreviation: abbreviation of category.
         Strongly recommended to use StrOneDimensionNdarray for all purposes including indexing and setting values
-        :param data: abbreviation of category
+
+        :param index: The index of data, optional, which is usually the same as the analysed obj
+
         :param name_mapper:
         """
-        self.abbreviation = StrOneDimensionNdarray(data) if data is not None else None
+        self.abbreviation = StrOneDimensionNdarray(abbreviation) if abbreviation is not None else None
         self.index = index if index is not None else StrOneDimensionNdarray(['N/A index'])
         self.name_mapper = name_mapper  # type: DataCategoryNameMapper
+
+    def rename(self, mapper: dict, new_name_mapper: DataCategoryNameMapper):
+        self.name_mapper = new_name_mapper
+        for key, val in mapper.items():
+            self.abbreviation[self(key)] = val
+        return self
 
     @property
     def pd_view(self):
         return pd.DataFrame(self.abbreviation, index=self.index, columns=['category abbreviation'])
 
-    def __call__(self, abbreviation: Union[Iterable[str], str]):
-        return np.isin(self.abbreviation, abbreviation)
+    def __call__(self, key: Union[Iterable[str], str]):
+        return np.isin(self.abbreviation, key)
 
-    def report(self, report_pd_to_csv_file_path: Path = None, *, abbreviation_rename_mapper: dict = None):
-        report_pd = pd.DataFrame(index=np.unique(self.abbreviation),
+    def report(self, report_pd_to_csv_file_path: Path = None, *,
+               abbreviation_rename_mapper: dict = None,
+               sorted_kwargs: dict = None):
+        abbreviation_unique = np.unique(self.abbreviation)
+        abbreviation_unique = sorted(abbreviation_unique, **(sorted_kwargs or {}))
+        report_pd = pd.DataFrame(index=abbreviation_unique,
                                  columns=['number', 'percentage'], dtype=float)
-        for this_outlier in np.unique(self.abbreviation):
+        for this_outlier in abbreviation_unique:
             this_outlier_number = sum(self(this_outlier))
             report_pd.loc[this_outlier, 'number'] = this_outlier_number
             report_pd.loc[this_outlier, 'percentage'] = this_outlier_number / self.abbreviation.shape[0] * 100
@@ -112,6 +148,10 @@ class DataCategoryData:
         plt.xticks(rotation=45)
         if report_pd_to_csv_file_path is not None:
             report_pd.to_csv(report_pd_to_csv_file_path)
+            self.name_mapper.to_csv(report_pd_to_csv_file_path.parent / 'name_mapper.csv')
+            pd.merge(report_pd, self.name_mapper.pd_view, how='left',
+                     left_index=True,
+                     right_on='abbreviation').to_csv(report_pd_to_csv_file_path.parent / 'report_with_name_mapper.csv')
 
 
 if __name__ == '__main__':

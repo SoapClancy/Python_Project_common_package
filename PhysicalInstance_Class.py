@@ -161,7 +161,7 @@ class PhysicalInstance:
         :return:
         """
         outlier_name_mapper = self.data_category_name_mapper
-        outlier = DataCategoryData(data=StrOneDimensionNdarray(['others'] * self.__getattribute__('shape')[0]),
+        outlier = DataCategoryData(abbreviation=StrOneDimensionNdarray(['others'] * self.__getattribute__('shape')[0]),
                                    name_mapper=outlier_name_mapper,
                                    index=self.__getattribute__('index').values)
         # give it enough memory to store the string. "missing" needs > U7. The default now is U10
