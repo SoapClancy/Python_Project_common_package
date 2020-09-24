@@ -23,33 +23,34 @@ class MethodOfBins:
                  '__mob', 'considered_data_mask_for_mob_calculation')
 
     def __init__(self, predictor_var: ndarray, dependent_var: ndarray,
-                 *, bin_step: float = None, first_bin_left_boundary: float = None, last_bin_left_boundary: float = None,
+                 *, bin_step: float, first_bin_left_boundary: float = None, last_bin_left_boundary: float = None,
                  considered_data_mask_for_mob_calculation: ndarray = None, **kwargs):
         """
         :param considered_data_mask_for_mob_calculation: 有时候可能只需要考虑一部分数据。尤其在分层outlier identification中。
         """
         self.predictor_var = predictor_var  # type: ndarray
         self.dependent_var = dependent_var  # type: ndarray
-        if bin_step is not None:
-            self.bin_step = bin_step
-            first_bin_left_boundary = first_bin_left_boundary or np.nanmin(self.predictor_var) - bin_step / 2
-            last_bin_left_boundary = last_bin_left_boundary or np.nanmax(self.predictor_var) - bin_step / 2
-            self.array_of_bin_boundary = self.__cal_array_of_bin_boundary(bin_step, first_bin_left_boundary,
-                                                                          last_bin_left_boundary)
-            self.considered_data_mask_for_mob_calculation = considered_data_mask_for_mob_calculation
-            self.__mob = self.__cal_mob()
+        self.bin_step = bin_step
+        if first_bin_left_boundary is None:
+            first_bin_left_boundary = np.nanmin(self.predictor_var) - bin_step / 2
+        if last_bin_left_boundary is None:
+            last_bin_left_boundary = np.nanmax(self.predictor_var) - bin_step / 2
+        self.array_of_bin_boundary = self.__cal_array_of_bin_boundary(first_bin_left_boundary, last_bin_left_boundary)
+        self.considered_data_mask_for_mob_calculation = considered_data_mask_for_mob_calculation
+        self.__mob = self.__cal_mob()
 
     def __str__(self):
         return "MethodOfBins instance for {} recordings".format(self.predictor_var.size)
 
-    def __cal_array_of_bin_boundary(self, bin_step: float, first_bin_left_boundary: float,
+    def __cal_array_of_bin_boundary(self, first_bin_left_boundary: float,
                                     last_bin_left_boundary: float):
         """
         计算mob的每个bin的左右边界值和中间值
         """
-        bin_left_boundary = np.arange(first_bin_left_boundary, last_bin_left_boundary + bin_step, bin_step)
-        bin_medium_boundary = bin_left_boundary + bin_step / 2
-        bin_right_boundary = bin_left_boundary + bin_step
+
+        bin_left_boundary = np.arange(first_bin_left_boundary, last_bin_left_boundary + self.bin_step, self.bin_step)
+        bin_medium_boundary = bin_left_boundary + self.bin_step / 2
+        bin_right_boundary = bin_left_boundary + self.bin_step
         results = np.array([bin_left_boundary, bin_medium_boundary, bin_right_boundary]).T
         results = convert_ndarray_to_arbitrary_precision(results, get_decimal_places_of_float(self.bin_step) + 1)
         return results

@@ -2,7 +2,7 @@ from numpy import ndarray
 from matplotlib import pyplot as plt
 import numpy as np
 from scipy.stats import gaussian_kde
-from typing import Union
+from typing import Union, Sequence
 import datetime
 import matplotlib.dates as mdates
 
@@ -44,7 +44,7 @@ def scatter_density(x: ndarray, y: ndarray, ax=None, **kwargs):
 
 @show_fig
 # def series(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(8, 8 * 7 / 14.93),
-def series(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5 * 0.618),
+def series(x: Union[range, ndarray, Sequence], y: ndarray = None, ax=None, figure_size=(5, 5 * 0.618),
 
            **kwargs):
     @creat_fig(figure_size, ax)

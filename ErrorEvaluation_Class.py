@@ -1,8 +1,6 @@
-from numpy import ndarray
-import numpy as np
 from Data_Preprocessing import float_eps
 import warnings
-from Ploting.fast_plot_Func import series
+from Ploting.fast_plot_Func import *
 
 
 class ErrorEvaluation:
@@ -12,8 +10,8 @@ class ErrorEvaluation:
 
 
 class DeterministicError(ErrorEvaluation):
-    def __init__(self, *, target: ndarray, model_output: ndarray, **kwargs):
-        super().__init__(target=target, model_output=model_output)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def cal_error(self, error_name: str) -> float:
         if error_name == 'mean_absolute_error':

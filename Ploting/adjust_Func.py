@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+from typing import Sequence, Iterable
 
 
 def reassign_linestyles_recursively_in_ax(ax, simple_linestyles: bool = True):
@@ -45,6 +46,21 @@ def adjust_legend_in_ax(ax, *, protocol=None, **kwargs):
     else:
         kwargs.setdefault('loc', 'upper center')
         ax.legend(**kwargs)
+    return ax
+
+
+def adjust_legend_order_in_ax(ax, *, new_order_of_labels: Sequence[str]):
+    handles, labels = ax.get_legend_handles_labels()
+    assert (handles.__len__() == new_order_of_labels.__len__()), "Check 'new_order_of_labels' length"
+
+    hl = sorted(zip(handles, labels),
+                key=lambda x: [x[1] == y for y in new_order_of_labels],
+                reverse=True)
+    handles, labels = zip(*hl)
+    ax.legend(handles, labels,
+              ncol=ax.get_legend().__getattribute__('_ncol'),
+              loc=ax.get_legend().__getattribute__('_loc'),
+              prop={'size': 10})
     return ax
 
 

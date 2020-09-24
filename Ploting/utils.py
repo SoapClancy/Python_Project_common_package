@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
 import seaborn as sns
+from typing import Union, Sequence
 
 sns.set()
 
@@ -36,6 +37,7 @@ def show_fig(func):
                 x_lim: tuple = None, y_lim: tuple = None,
                 infer_y_lim_according_to_x_lim=False,
                 x_ticks: tuple = (), y_ticks: tuple = (),
+                x_ticks_rotation: Union[int, float] = 0,
                 save_file_: str = None,
                 save_format: str = 'png',
                 save_to_buffer: bool = False,
@@ -48,8 +50,10 @@ def show_fig(func):
         if kwargs.get('label') is not None:
             ax.legend(loc=legend_loc, ncol=legend_ncol, prop={'size': 10})
         plt.title(title)
-        plt.xlabel(x_label, fontsize=10)
-        plt.ylabel(y_label, fontsize=10)
+        if isinstance(x_label, str):
+            plt.xlabel(x_label, fontsize=10)
+        if isinstance(y_label, str):
+            plt.ylabel(y_label, fontsize=10)
         if isinstance(x_lim, tuple):
             plt.xlim(*x_lim)
             if all((infer_y_lim_according_to_x_lim,
@@ -63,7 +67,7 @@ def show_fig(func):
                          np.max(y_in_x_lim) + y_resolution)
         if isinstance(y_lim, tuple):
             plt.ylim(*y_lim)
-        plt.xticks(*x_ticks, fontsize=10)
+        plt.xticks(*x_ticks, fontsize=10, rotation=x_ticks_rotation)
         plt.yticks(*y_ticks, fontsize=10)
         plt.grid(True)
         # dates
@@ -71,6 +75,9 @@ def show_fig(func):
         if isinstance(kwargs.get('x'), pd.DatetimeIndex):
             ax.xaxis.set_major_formatter(mdates.DateFormatter(x_axis_format,
                                                               tz=tz))
+        if all((isinstance(save_file_, str), isinstance(save_format, str))):
+            plt.savefig(save_file_ + '.' + save_format, format=save_format, dpi=300)
+
         # 如果要存入buffer
         if save_to_buffer:
             buf = BytesIO()
@@ -78,9 +85,12 @@ def show_fig(func):
             plt.close()
             return buf  # 返回buf
         else:
+            # plt.show(block=False)
+
+            plt.ion()
             plt.show()
-        if all((isinstance(save_file_, str), isinstance(save_format, str))):
-            plt.savefig(save_file_ + '.' + save_format, format=save_format, dpi=300)
+            plt.draw()
+            plt.pause(0.001)
         return plt.gca()  # 返回gca
 
     return wrapper
