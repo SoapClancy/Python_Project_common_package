@@ -55,7 +55,7 @@ class PhysicalInstance:
     """
 
     @property
-    def data_category_name_mapper(self) -> DataCategoryNameMapper:
+    def outlier_name_mapper(self) -> DataCategoryNameMapper:
         """
         Note that this is to analyse all "predictor_names" and "dependant_names" dimensions together,
         i.e., these dimensions are treated as a whole.
@@ -160,7 +160,7 @@ class PhysicalInstance:
         :param data_category_data_type:
         :return:
         """
-        outlier_name_mapper = self.data_category_name_mapper
+        outlier_name_mapper = self.outlier_name_mapper
         outlier = DataCategoryData(abbreviation=StrOneDimensionNdarray(['others'] * self.__getattribute__('shape')[0]),
                                    name_mapper=outlier_name_mapper,
                                    index=self.__getattribute__('index').values)

@@ -13,8 +13,9 @@ from Ploting.fast_plot_Func import *
 @show_fig
 def bivariate_uncertainty_plot(x: ndarray, y: ndarray, boundary: ndarray, ax=None):
     """
-    #TODO Depreciated. Use plot_from_uncertainty_like_dataframe instead
+    # Depreciated. Use plot_from_uncertainty_like_dataframe instead
     """
+    warnings.warn("Depreciated. Use plot_from_uncertainty_like_dataframe instead", DeprecationWarning)
 
     @creat_fig((5, 5 * 0.618), ax)
     def plot(ax_):
