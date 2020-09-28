@@ -2,9 +2,9 @@ from UnivariateAnalysis_Class import Univariate, UnivariateGaussianMixtureModel
 from typing import Tuple, Iterable
 import numpy as np
 from numpy import ndarray
-import matlab.engine
-from matlab.mlarray import double
-import matlab
+# import matlab.engine
+# from matlab.mlarray import double
+# import matlab
 from File_Management.load_save_Func import load_exist_pkl_file_otherwise_run_and_save, save_pkl_file, load_pkl_file
 from sklearn.mixture import GaussianMixture
 import warnings
