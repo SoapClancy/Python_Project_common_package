@@ -120,11 +120,12 @@ class PhysicalInstance:
         :return: Boolean ndarray.
         """
         boolean_array = np.full(self.__getattribute__('shape')[0], fill_value=False)
+
         # %% constant mode
         if constant_error is not None:
-            rolling_obj = self.concerned_data().pd_view().rolling(*rolling_args, **rolling_kwargs)
-            desired_number = int(np.nanmax(rolling_obj.count().values))
             for this_dim, this_dim_error in constant_error.items():
+                rolling_obj = self.concerned_data().pd_view().rolling(*rolling_args, **rolling_kwargs)
+                desired_number = int(np.nanmax(rolling_obj.count().values))
                 this_boolean_array = np.isclose(rolling_obj.min()[this_dim], rolling_obj.max()[this_dim],
                                                 rtol=0, atol=this_dim_error)
                 this_boolean_array[~np.all(rolling_obj.count() == desired_number, axis=1)] = False
@@ -135,19 +136,22 @@ class PhysicalInstance:
             # boolean_array[~np.all(rolling_obj.count() == desired_number, axis=1)] = False
         # %% general linearity mode
         elif general_linearity_error is not None:
-            # TODO 1) desired_number, 2) engine='numba', 3) ~np.all(rolling_obj.count() == desired_number, axis=1)
             def func(x, tol):
                 double_diff = np.diff(x, 2)
-                if double_diff.shape[0] == 0:
+                if x.shape[0] < desired_number:
                     return False
                 else:
-                    return np.max(double_diff) - np.min(double_diff) < tol
+                    return np.all(np.abs(double_diff) < tol)
 
             for this_dim, this_dim_error in general_linearity_error.items():
                 rolling_obj = self[this_dim].rolling(*rolling_args, **rolling_kwargs)
+                desired_number = int(np.nanmax(rolling_obj.count().values))
                 this_boolean_array = rolling_obj.apply(func, raw=True,
-                                                       # engine='numba',
+                                                       engine='numba',
                                                        args=(this_dim_error,)).astype(bool)
+                this_boolean_array_protect = copy.deepcopy(this_boolean_array)
+                for i in range(desired_number):
+                    this_boolean_array = np.bitwise_or(this_boolean_array, np.roll(this_boolean_array_protect, -i))
                 boolean_array = np.bitwise_or(boolean_array, this_boolean_array)
         else:
             raise Exception("Must specify 'constant_error' or 'general_linearity_error'")

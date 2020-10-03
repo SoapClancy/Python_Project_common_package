@@ -87,7 +87,7 @@ class DataCategoryNameMapper(pd.DataFrame, metaclass=DataCategoryNameMapperMeta)
         if old_key_name == 'long name':
             func = self.__getattr__("infer_from_long_name")
         else:
-            func = self.__getattr__(f"self.infer_from_{old_key_name}")
+            func = self.__getattr__(f"infer_from_{old_key_name}")
 
         sequence_data = copy.deepcopy(sequence_data)
         for this_unique_sequence_data in np.unique(sequence_data):
@@ -139,11 +139,11 @@ class DataCategoryData:
             report_pd.loc[this_outlier, 'number'] = this_outlier_number
             report_pd.loc[this_outlier, 'percentage'] = this_outlier_number / self.abbreviation.shape[0] * 100
         report_pd.rename(index=abbreviation_rename_mapper or {}, inplace=True)
-        bar(report_pd.index, report_pd['percentage'].values, y_label="Recording percentage [%]",
+        bar(report_pd.index, report_pd['percentage'].values, y_label="Recording Percentage [%]",
             autolabel_format="{:.2f}", y_lim=(-1, 85))
         plt.xticks(rotation=45)
 
-        bar(report_pd.index, report_pd['number'].values, y_label="Recording number",
+        bar(report_pd.index, report_pd['number'].values, y_label="Recording Number",
             autolabel_format="{:.0f}", y_lim=(-1, np.max(report_pd['number'].values) * 1.2))
         plt.xticks(rotation=45)
         if report_pd_to_csv_file_path is not None:
@@ -152,6 +152,7 @@ class DataCategoryData:
             pd.merge(report_pd, self.name_mapper.pd_view, how='left',
                      left_index=True,
                      right_on='abbreviation').to_csv(report_pd_to_csv_file_path.parent / 'report_with_name_mapper.csv')
+        return report_pd
 
 
 if __name__ == '__main__':
