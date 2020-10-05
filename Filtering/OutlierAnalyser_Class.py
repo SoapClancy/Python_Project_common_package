@@ -101,7 +101,7 @@ class DataCategoryData:
 
     def __init__(self, abbreviation: Union[StrOneDimensionNdarray, ndarray] = None, *,
                  index: Union[ndarray, pd.Index] = None,
-                 name_mapper: DataCategoryNameMapper):
+                 name_mapper: DataCategoryNameMapper = None):
         """
         :param abbreviation: abbreviation of category.
         Strongly recommended to use StrOneDimensionNdarray for all purposes including indexing and setting values

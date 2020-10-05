@@ -33,8 +33,11 @@ class PhysicalInstance:
         """
         To initialise a new instance from an existing instance, which may a cause of resampling, slicing, etc.
         """
-        kwargs = dict(ChainMap(kwargs,
-                               {key: self.__getattribute__(key) for key in self.__slots__}))
+        kwargs = dict(ChainMap(
+            kwargs,
+            {key: self.__getattribute__(key) for key in self.__slots__ if key not in PhysicalInstance.__slots__}
+        ))
+
         new_instance = self.__class__(
             *args,
             obj_name=self.obj_name,
