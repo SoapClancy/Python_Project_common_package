@@ -5,6 +5,9 @@ from collections import ChainMap
 from Filtering.OutlierAnalyser_Class import DataCategoryNameMapper, DataCategoryData
 from ConvenientDataType import StrOneDimensionNdarray
 import copy
+from UnivariateAnalysis_Class import CategoryUnivariate, UnivariateGaussianMixtureModel, UnivariatePDFOrCDFLike
+from Correlation_Modeling.Copula_Class import VineGMCMCopula
+from pathlib import Path
 
 
 class PhysicalInstance:
@@ -205,7 +208,7 @@ class PhysicalInstance:
         This function return a slice of the instance, where the columns only contain predictor_names and dependant_names
         :return:
         """
-        concerned_dims = list(self.predictor_names) + list(self.dependant_names)
+        concerned_dims = list(self.dependant_names) + list(self.predictor_names)
         data_obj = self.init_from_self(self[concerned_dims])
         return data_obj
 
@@ -224,6 +227,48 @@ class PhysicalInstance:
             return resampler_results
         else:
             return resampler_obj
+
+    @property
+    def default_results_saving_path(self):
+        return {}
+
+    def fit_joint_probability_model_by_copula(self, vine_construction):
+        """
+        Use Vine-GMCM to fit the relationship between predictors and dependant variables
+        :return:
+        """
+        copula_folder_path = self.default_results_saving_path['Copula folder']  # type: Path
+        vine_gmcm_copula = VineGMCMCopula(self.concerned_data().values,
+                                          construction=vine_construction,
+                                          gmcm_model_folder_for_construction_path_=copula_folder_path.__str__(),
+                                          marginal_distribution_file_=copula_folder_path.__str__() + '/marginal.pkl')
+        vine_gmcm_copula.fit()
+
+    def obtain_pdf_by_copula(self, vine_construction, predictor_ndarray: ndarray, *,
+                             steps: int = 1000, pdf_x_limits: Sequence) -> Tuple:
+        assert self.concerned_data().shape[1] == vine_construction.__len__()
+        assert predictor_ndarray.shape[1] == self.predictor_names.__len__()
+
+        if self.dependant_names.__len__() > 1:
+            raise NotImplementedError
+
+        # Load fitted Copula
+        copula_folder_path = self.default_results_saving_path['Copula folder']  # type: Path
+        vine_gmcm_copula = VineGMCMCopula(construction=vine_construction,
+                                          gmcm_model_folder_for_construction_path_=copula_folder_path.__str__(),
+                                          marginal_distribution_file_=copula_folder_path.__str__() + '/marginal.pkl')
+        # Prepare inputs
+        dependant_grid = np.tile(np.linspace(*pdf_x_limits, steps), predictor_ndarray.shape[0])
+        predictor_ndarray = np.repeat(predictor_ndarray, steps, axis=0)
+        copula_pdf_input = np.concatenate((dependant_grid[:, np.newaxis], predictor_ndarray), axis=1)
+        # Calculate
+        copula_pdf_results = vine_gmcm_copula.cal_joint_pdf(ndarray_data_like=copula_pdf_input)
+        # Transform the results to Tuple
+        copula_pdf_results = np.reshape(copula_pdf_results, (-1, steps))
+        pdf_tuple = []
+        for y in copula_pdf_results:
+            pdf_tuple.append(UnivariatePDFOrCDFLike(pdf_like_ndarray=np.stack((y, dependant_grid[:steps]), axis=1)))
+        return tuple(pdf_tuple)
 
 
 class PhysicalInstanceSeries(PhysicalInstance, pd.Series):

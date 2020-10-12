@@ -2,9 +2,9 @@ from UnivariateAnalysis_Class import Univariate, UnivariateGaussianMixtureModel
 from typing import Tuple, Iterable
 import numpy as np
 from numpy import ndarray
-# import matlab.engine
-# from matlab.mlarray import double
-# import matlab
+import matlab.engine
+from matlab.mlarray import double
+import matlab
 from File_Management.load_save_Func import load_exist_pkl_file_otherwise_run_and_save, save_pkl_file, load_pkl_file
 from sklearn.mixture import GaussianMixture
 import warnings
@@ -17,6 +17,8 @@ from UnivariateAnalysis_Class import UnivariatePDFOrCDFLike
 import copy
 from abc import ABCMeta, abstractmethod
 from itertools import permutations
+from typing import Union
+from pathlib import Path
 
 THREE_DIM_CVINE_CONSTRUCTION = ((1, 2), (1, 3), (2, 3, 1))
 FOUR_DIM_CVINE_CONSTRUCTION = ((1, 2), (1, 3), (1, 4), (2, 3, 1), (2, 4, 1), (3, 4, 1, 2))
@@ -119,7 +121,7 @@ class Copula(metaclass=ABCMeta):
         gmm_model = [Univariate(x[~np.isnan(x)]).fit_using_gaussian_mixture_model() for x in self.ndarray_data.T]
         return tuple(gmm_model)
 
-    def load_or_fit_marginal_distribution_by_gmm(self, marginal_distribution_file_: str) -> \
+    def load_or_fit_marginal_distribution_by_gmm(self, marginal_distribution_file_: Union[str, Path]) -> \
             Tuple[GaussianMixture, ...]:
         """
         尝试载入边缘分布模型，如果模型不存在，就fit，如果也给了路径，就fit and save
@@ -127,14 +129,14 @@ class Copula(metaclass=ABCMeta):
         :return: GaussianMixture组成的tuple
         """
         if marginal_distribution_file_ is not None:
-            @load_exist_pkl_file_otherwise_run_and_save(marginal_distribution_file_)
+            @load_exist_pkl_file_otherwise_run_and_save(Path(marginal_distribution_file_))
             def fit_marginal_distribution():
                 if self.ndarray_data is None:
                     raise Exception("No valid model is detected in 'marginal_distribution_file_' and 'ndarray_data'")
                 else:
                     return self.__fit_marginal_distribution_by_gmm()
 
-            return fit_marginal_distribution
+            return fit_marginal_distribution()
         else:
             return self.__fit_marginal_distribution_by_gmm()
 
@@ -291,6 +293,8 @@ class BivariateCopula(Copula):
 
 
 class GMCM(BivariateCopula):
+    matlab_script_folder_path = python_project_common_path_.__str__() + r'\Correlation_Modeling\GMCM_MATLAB'
+
     __slots__ = ('gmcm_model_file_',)
     """
     ！！！这里的GMCM只考虑2元的情况！！！
@@ -321,7 +325,7 @@ class GMCM(BivariateCopula):
         """
         if gmcm_fitting_attempt == 1:
             eng = matlab.engine.start_matlab()
-            eng.addpath(python_project_common_path_ + r'Correlation_Modeling\GMCM_MATLAB', nargout=0)
+            eng.addpath(self.matlab_script_folder_path, nargout=0)
             eng.estimate_gmcm_and_save(double(self.ndarray_data_in_uniform.tolist()), self.gmcm_model_file_,
                                        gmcm_fitting_k,
                                        gmcm_max_fitting_iteration, nargout=0)
@@ -330,7 +334,7 @@ class GMCM(BivariateCopula):
             for i in range(gmcm_fitting_attempt):
                 save_name = self.gmcm_model_file_ + str(i) if i > 0 else self.gmcm_model_file_
                 eng = matlab.engine.start_matlab()
-                eng.addpath(python_project_common_path_ + r'Correlation_Modeling\GMCM_MATLAB', nargout=0)
+                eng.addpath(self.matlab_script_folder_path, nargout=0)
                 eng.estimate_gmcm_and_save(double(self.ndarray_data_in_uniform.tolist()),
                                            save_name,
                                            gmcm_fitting_k,
@@ -339,7 +343,7 @@ class GMCM(BivariateCopula):
 
     def __cal_gmcm_cdf_using_matlab(self, uniform_ndarray_data_like):
         eng = matlab.engine.start_matlab()
-        eng.addpath(python_project_common_path_ + r'Correlation_Modeling\GMCM_MATLAB', nargout=0)
+        eng.addpath(self.matlab_script_folder_path, nargout=0)
         gmcm_cdf_value = eng.load_gmcm_and_cal_cdf(double(uniform_ndarray_data_like.tolist()),
                                                    self.gmcm_model_file_, nargout=1)
         eng.quit()
@@ -347,7 +351,7 @@ class GMCM(BivariateCopula):
 
     def __cal_gmcm_pdf_using_matlab(self, uniform_ndarray_data_like):
         eng = matlab.engine.start_matlab()
-        eng.addpath(python_project_common_path_ + r'Correlation_Modeling\GMCM_MATLAB', nargout=0)
+        eng.addpath(self.matlab_script_folder_path, nargout=0)
         gmcm_pdf_value = eng.load_gmcm_and_cal_pdf(double(uniform_ndarray_data_like.tolist()),
                                                    self.gmcm_model_file_, nargout=1)
         eng.quit()
@@ -355,7 +359,7 @@ class GMCM(BivariateCopula):
 
     def __simulate_gmcm_using_matlab(self, n):
         eng = matlab.engine.start_matlab()
-        eng.addpath(python_project_common_path_ + r'Correlation_Modeling\GMCM_MATLAB', nargout=0)
+        eng.addpath(self.matlab_script_folder_path, nargout=0)
         simulated = eng.load_gmcm_and_simulate(self.gmcm_model_file_, n, nargout=1)
         eng.quit()
         return np.asarray(simulated)
@@ -395,7 +399,7 @@ class GMCM(BivariateCopula):
         if ndarray_data_like_in_uniform is None:
             ndarray_data_like_in_uniform = self.transform_ndarray_data_like_to_uniform_by_gmm(ndarray_data_like)
         eng = matlab.engine.start_matlab()
-        eng.addpath(python_project_common_path_ + r'Correlation_Modeling\GMCM_MATLAB', nargout=0)
+        eng.addpath(self.matlab_script_folder_path, nargout=0)
         cdf_partial_derivative_value = eng.load_gmcm_and_cdf_partial_derivative(
             double(ndarray_data_like_in_uniform.tolist()),
             partial_derivative_var_idx[0] + 1, self.gmcm_model_file_, nargout=1)
@@ -563,7 +567,7 @@ class VineGMCMCopula(VineCopula):
 
     def __get_gmcm_model_files_for_construction(self, gmcm_model_folder_for_construction_path_):
         return tuple(
-            [gmcm_model_folder_for_construction_path_ + 'GMCM_' + str(x) + '.mat' for x in self.construction])
+            [gmcm_model_folder_for_construction_path_ + '/GMCM_' + str(x) + '.mat' for x in self.construction])
 
     def fit(self):
         # fit模型
@@ -594,9 +598,9 @@ class VineGMCMCopula(VineCopula):
                 initialised_pair_copula_of_each_edge.append(
                     GMCM(gmcm_model_file_=this_edge_gmcm,
                          ndarray_data_in_uniform=self.all_vars_valid_data(np.stack((input_left, input_right), axis=1)),
-                         gmcm_fitting_k=10,
-                         gmcm_max_fitting_iteration=2500,
-                         gmcm_fitting_attempt=30,
+                         gmcm_fitting_k=8,
+                         gmcm_max_fitting_iteration=1500,
+                         gmcm_fitting_attempt=1,
                          str_name='GMCM_{}'.format(str(self.resolved_construction['conditioned'][edge_idx]) + '|' +
                                                    str(self.resolved_construction['conditioning'][edge_idx]))))
                 # 重新修正ndarray_data_in_uniform使其包含nan，size对齐输入
