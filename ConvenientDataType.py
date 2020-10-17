@@ -123,7 +123,7 @@ class UncertaintyDataFrame(pd.DataFrame):
 
     @classmethod
     def init_from_template(cls, columns_number: int, *,
-                           percentiles: Union[None, ndarray] = np.arange(0, 100.001, 0.001)):
+                           percentiles: Union[None, ndarray, Sequence] = np.arange(0, 100.001, 0.001)):
         from Data_Preprocessing.float_precision_control_Func import covert_to_str_one_dimensional_ndarray
         if percentiles is None:
             percentiles = []
@@ -142,11 +142,13 @@ class UncertaintyDataFrame(pd.DataFrame):
         uncertainty_dataframe = cls.init_from_template(two_dim_array.shape[1],
                                                        percentiles=percentiles)
         for i in range(two_dim_array.shape[1]):
-            uncertainty_dataframe.iloc[:, i] = np.concatenate(
-                (np.percentile(two_dim_array[:, i], percentiles.astype('float')),
-                 np.mean(two_dim_array[:, i], keepdims=True),
-                 np.std(two_dim_array[:, i], keepdims=True))
-            )
+            # uncertainty_dataframe.iloc[:, i] = np.concatenate(
+            #     (np.percentile(two_dim_array[:, i], percentiles.astype('float')),
+            #      np.mean(two_dim_array[:, i], keepdims=True),
+            #      np.std(two_dim_array[:, i], keepdims=True))
+            # )
+            uncertainty_dataframe.update_one_column(column_name=i,
+                                                    data=two_dim_array[:, i])
         return cls(uncertainty_dataframe)
 
     def infer_higher_half_percentiles(self, lower_half_percentiles: StrOneDimensionNdarray) -> StrOneDimensionNdarray:
@@ -186,7 +188,8 @@ class UncertaintyDataFrame(pd.DataFrame):
         else:
             preserved_data_percentage = [(100 - preserved_data_percentage) / 2,
                                          100 - (100 - preserved_data_percentage) / 2]
-        index_float = np.array(self.index[:-2]).astype('float')
+        last_nan_index = [i for i, val in enumerate(self.index.values) if 'Sigma' not in val][0]
+        index_float = np.array(self.index[:last_nan_index+1]).astype('float')
         # TODO 向量化和插值
         index_select = [np.argmin(np.abs(index_float - x)) for x in preserved_data_percentage]
         return pd.DataFrame(self).iloc[index_select, :]

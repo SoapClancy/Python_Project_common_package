@@ -106,8 +106,8 @@ def bar(*args, ax=None, autolabel_format: str = None, **kwargs):
 
 
 @show_fig
-def hist(hist_data: ndarray, ax=None, **kwargs):
-    @creat_fig((5, 5 * 0.618), ax)
+def hist(hist_data: ndarray, ax=None, figure_size=(5, 5 * 0.618), **kwargs):
+    @creat_fig(figure_size, ax)
     def plot(_ax):
         return _ax.hist(x=hist_data, **kwargs)
 
@@ -115,13 +115,13 @@ def hist(hist_data: ndarray, ax=None, **kwargs):
 
 
 @show_fig
-def vlines(x, ax=None, **kwargs):
+def vlines(x, ax=None, linewidth=None, **kwargs):
     @creat_fig((5, 5 * 0.618), ax)
     def plot(_ax):
         ymin = kwargs.pop('ymin') if 'ymin' in kwargs else -10e2
         ymax = kwargs.pop('ymax') if 'ymax' in kwargs else 10e4
         linestyles = kwargs.pop('linestyles') if 'linestyles' in kwargs else '--'
-        return _ax.vlines(x, ymin=ymin, ymax=ymax, linestyles=linestyles, alpha=0.5, **kwargs)
+        return _ax.vlines(x, ymin=ymin, ymax=ymax, linewidth=linewidth, linestyles=linestyles, alpha=0.95, **kwargs)
 
     return plot
 

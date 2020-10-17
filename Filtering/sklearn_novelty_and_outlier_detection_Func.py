@@ -7,7 +7,7 @@ import numpy as np
 from Ploting.fast_plot_Func import *
 
 
-def use_isolation_forest(data: ndarray, random_state=0, isolationforest_kwargs: dict = None):
+def use_isolation_forest(data: ndarray, random_state=0, isolationforest_kwargs: dict = None, *, return_obj=False):
     isolationforest_kwargs = isolationforest_kwargs or {}
     clf = IsolationForest(max_samples=isolationforest_kwargs.get('max_samples', data.shape[0]),
                           random_state=random_state,
@@ -16,7 +16,10 @@ def use_isolation_forest(data: ndarray, random_state=0, isolationforest_kwargs: 
     outlier = clf.predict(data) == -1
     # ax = scatter(*data[~outlier].T)
     # ax = scatter(*data[outlier].T, ax=ax)
-    return outlier
+    if return_obj:
+        return clf
+    else:
+        return outlier
 
 
 def use_local_outlier_factor(data: ndarray, data_idx: ndarray, lof_args: dict = None):
