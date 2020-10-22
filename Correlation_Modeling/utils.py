@@ -5,6 +5,7 @@ from ConvenientDataType import OneDimensionNdarray, ndarray
 import numpy as np
 from typing import Union
 from Ploting.fast_plot_Func import *
+from Data_Preprocessing import float_eps
 
 
 class CorrelationFuncMapperMeta(type):
@@ -31,7 +32,7 @@ class CorrelationAnalyser:
 class BivariateCorrelationAnalyser(CorrelationAnalyser, Bivariate):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        super(CorrelationAnalyser, self).__init__(*args, **kwargs)
+        super(CorrelationAnalyser, self).__init__(*args, bin_step=None, **kwargs)
 
     def __call__(self, correlation_coefficient_name: str, *args, **kwargs):
         func = CorrelationFuncMapper[correlation_coefficient_name]

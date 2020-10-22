@@ -27,53 +27,53 @@ from Regression_Analysis.Models import BayesianRegression
 import torch
 import pyro.distributions as dist
 
-
 USE_DEGREE_FOR_PLOT = True
+
+
+@unique
+class SupportedTransformedPeriod(Enum):
+    # 命名方式是：
+    # ('convenient_period_unit_name',
+    # 'convenient_frequency_unit_name',
+    # 'plot_x_lim', 👉 ()代表不设置限制让matplotlib自动决定，
+    # (x1, x2)代表一个图范围是x1到x2，((x1,x2), (x3,x4))代表两个图
+    # 'scale_factor')
+    second = ('second', '1/second', (0, None), 1)
+    minute = ('minute', '1/minute', (-10e-4, None), 60)
+    hour = ('hour', '1/hour', ((-10e-4, 0.3), (-10e-4, None)), 60 * 60)
+    half_day = ('half day', '1/half day', ((-0.05, 4), (-0.05, None)), 60 * 60 * 12)
+    day = ('day', '1/day', ((-0.1, 12), (-0.1, None)), 60 * 60 * 24)
+    week = ('week', '1/week', (3.5, 10.5), 60 * 60 * 24 * 7)
+    _28_days = ('28 days', '1/28 days', ((-0.25, 100), (-0.25, None)), 60 * 60 * 24 * 28)
+    _364_days = ('364 days', '1/364 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 364)
+    _365_days = ('365 days', '1/365 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 365)
+    _365_25_days = ('365.25 days', '1/365.25 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 365.25)
+
+    @classmethod
+    def get_by_convenient_frequency_unit_name(cls, convenient_frequency_unit_name: str):
+        for value in cls:
+            if convenient_frequency_unit_name == value.value[1]:
+                return value.value
+        raise Exception('Unsupported transformed frequency')
+
+    @classmethod
+    def get_by_convenient_period_unit_name(cls, convenient_period_unit_name: str):
+        for value in cls:
+            if convenient_period_unit_name == value.value[0]:
+                return value.value
+        raise Exception('Unsupported transformed period')
+
+    @classmethod
+    def list_all_convenient_period_unit_names(cls) -> tuple:
+        return tuple([x.value[0] for x in cls])
+
+    @classmethod
+    def list_all_convenient_frequency_unit_names(cls) -> tuple:
+        return tuple([x.value[1] for x in cls])
 
 
 class FFTProcessor:
     __slots__ = ('original_signal', 'sampling_period', 'name', 'n_fft')
-
-    @unique
-    class SupportedTransformedPeriod(Enum):
-        # 命名方式是：
-        # ('convenient_period_unit_name',
-        # 'convenient_frequency_unit_name',
-        # 'plot_x_lim', 👉 ()代表不设置限制让matplotlib自动决定，
-        # (x1, x2)代表一个图范围是x1到x2，((x1,x2), (x3,x4))代表两个图
-        # 'scale_factor')
-        second = ('second', '1/second', (0, None), 1)
-        minute = ('minute', '1/minute', (-10e-4, None), 60)
-        hour = ('hour', '1/hour', ((-10e-4, 0.3), (-10e-4, None)), 60 * 60)
-        half_day = ('half day', '1/half day', ((-0.05, 4), (-0.05, None)), 60 * 60 * 12)
-        day = ('day', '1/day', ((-0.1, 12), (-0.1, None)), 60 * 60 * 24)
-        week = ('week', '1/week', (3.5, 10.5), 60 * 60 * 24 * 7)
-        _28_days = ('28 days', '1/28 days', ((-0.25, 100), (-0.25, None)), 60 * 60 * 24 * 28)
-        _364_days = ('364 days', '1/364 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 364)
-        _365_days = ('365 days', '1/365 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 365)
-        _365_25_days = ('365.25 days', '1/365.25 days', ((-0.25, 30.5), (359.5, 375.5)), 60 * 60 * 24 * 365.25)
-
-        @classmethod
-        def get_by_convenient_frequency_unit_name(cls, convenient_frequency_unit_name: str):
-            for value in cls:
-                if convenient_frequency_unit_name == value.value[1]:
-                    return value.value
-            raise Exception('Unsupported transformed frequency')
-
-        @classmethod
-        def get_by_convenient_period_unit_name(cls, convenient_period_unit_name: str):
-            for value in cls:
-                if convenient_period_unit_name == value.value[0]:
-                    return value.value
-            raise Exception('Unsupported transformed period')
-
-        @classmethod
-        def list_all_convenient_period_unit_names(cls) -> tuple:
-            return tuple([x.value[0] for x in cls])
-
-        @classmethod
-        def list_all_convenient_frequency_unit_names(cls) -> tuple:
-            return tuple([x.value[1] for x in cls])
 
     def __init__(self, original_signal: ndarray, *,
                  sampling_period: Union[int, float],
@@ -131,7 +131,7 @@ class FFTProcessor:
         """
         if self.n_fft % 2 == 0:
             return (1 / self._cal_single_sided_frequency()) / \
-                   self.SupportedTransformedPeriod.get_by_convenient_period_unit_name(period_unit)
+                   SupportedTransformedPeriod.get_by_convenient_period_unit_name(period_unit)
         else:
             raise Exception('TODO')
 
@@ -152,7 +152,7 @@ class FFTProcessor:
         results = pd.DataFrame({'magnitude': self._cal_single_sided_amplitude(),
                                 'log magnitude': np.log(self._cal_single_sided_amplitude()),
                                 'phase angle (rad)': self._cal_single_sided_angle()})
-        for value in self.SupportedTransformedPeriod:
+        for value in SupportedTransformedPeriod:
             results[value.value[0]] = (1 / self._cal_single_sided_frequency()) / value.value[-1]
         results.index = self._cal_single_sided_frequency()
         results = results.rename_axis('frequency')
@@ -170,7 +170,7 @@ class FFTProcessor:
         results = pd.DataFrame({'magnitude': self._cal_single_sided_amplitude(),
                                 'log magnitude': np.log(self._cal_single_sided_amplitude()),
                                 'phase angle (rad)': self._cal_single_sided_angle()})
-        for value in self.SupportedTransformedPeriod:
+        for value in SupportedTransformedPeriod:
             results[value.value[1]] = self._cal_single_sided_frequency() * value.value[-1]
         results.index = self._cal_single_sided_frequency()
         results = results.rename_axis('frequency')
@@ -182,7 +182,8 @@ class FFTProcessor:
     def plot(self,
              considered_frequency_units: Union[str, Tuple[str, ...]] = None, *,
              overridden_plot_x_lim: Tuple[Union[int, float, None], Union[int, float, None]] = None,
-             save_as_docx_path: Path = None) -> tuple:
+             save_as_docx_path: Path = None,
+             plot_log: bool = False) -> tuple:
         """
         画频谱图和相位图
         :return: 最后一组fft的frequency和phase的图的buf或者gca
@@ -193,7 +194,7 @@ class FFTProcessor:
         if isinstance(considered_frequency_units, str):
             considered_frequency_units = (considered_frequency_units,)
         considered_frequency_units = \
-            considered_frequency_units or self.SupportedTransformedPeriod.list_all_convenient_frequency_unit_names()
+            considered_frequency_units or SupportedTransformedPeriod.list_all_convenient_frequency_unit_names()
         # %% 如果要存成docx，那就准备buffer
         if save_as_docx_path:
             # save_as_docx_buff.key就是图像的名字
@@ -213,12 +214,13 @@ class FFTProcessor:
             x = full_results_to_be_plot[_this_considered_frequency_unit].values
             # frequency
             buf_f = stem(x=x,
-                         y=full_results_to_be_plot['magnitude'].values,
+                         y=full_results_to_be_plot['magnitude'].values if not plot_log else np.log(
+                             full_results_to_be_plot['magnitude'].values),
                          ax=None,
                          x_lim=x_lim,
                          infer_y_lim_according_to_x_lim=True,
                          x_label=f'Frequency ({_this_considered_frequency_unit})',
-                         y_label='Magnitude',
+                         y_label=f"{'Log ' if plot_log else ''}Magnitude",
                          save_to_buffer=False)
             if save_to_buffer:
                 if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0]:
@@ -244,7 +246,7 @@ class FFTProcessor:
             return buf_f, buf_p
 
         for this_considered_frequency_unit in considered_frequency_units:
-            value = self.SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
+            value = SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
                 this_considered_frequency_unit
             )
 
@@ -399,7 +401,7 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
     def _form_callable_component_funcs(self) -> Tuple[Callable, ...]:
         pass
 
-    def __call__(self, x_value: Union[pd.DatetimeIndex, ndarray],
+    def __call__(self, x_value: Union[pd.DatetimeIndex, ndarray, pd.Index],
                  scale_to_minus_plus_one_flag=False, *,
                  return_raw=False):
         """
@@ -425,6 +427,26 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
         else:
             return results, raw_results.T
 
+    def plot(self, considered_frequency_unit, *, save_to_buffer: bool = False):
+        frequency = self.frequency * SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
+            considered_frequency_unit)[-1]
+        magnitude = np.log(self.obtain_amplitude_and_phase_angle()['amplitude'])
+        phase_angle = self.obtain_amplitude_and_phase_angle()['phase_angle']
+        ax1 = stem(x=frequency,
+                   y=magnitude,
+                   x_label=f'Frequency [{considered_frequency_unit}]',
+                   y_label=f"Log Magnitude",
+                   save_to_buffer=save_to_buffer)
+        ax2 = stem(x=frequency,
+                   y=phase_angle if not USE_DEGREE_FOR_PLOT else (phase_angle * 180 / float(np.pi)),
+                   x_label=f'Frequency [{considered_frequency_unit}]',
+                   y_label=f"Phase angle [{'Rad' if not USE_DEGREE_FOR_PLOT else 'Degree'}]",
+                   save_to_buffer=save_to_buffer)
+        return ax1, ax2
+
+    def obtain_amplitude_and_phase_angle(self) -> dict:
+        pass
+
 
 class APFormFourierSeriesProcessor(FourierSeriesProcessor):
     __slots__ = ('magnitude', 'phase')
@@ -438,7 +460,7 @@ class APFormFourierSeriesProcessor(FourierSeriesProcessor):
             # 又是python copy的问题，
             # component_funcs.append(lambda x: this_magnitude * np.cos(2 * np.pi * this_frequency * x - this_phase))
             # 会使得component_funcs中每个函数的调用结果都一样。因为深层的函数内部的参数的指向一样
-            # 解决方法：转成str类，作为source code，用的时候在用eval执行
+            # 解决方法：转成str类，作为source code，用的时候再用eval执行
             source_code = f"lambda x: {this_magnitude} * np.cos(2 * np.pi * {this_frequency} * x - {this_phase})"
             component_funcs.append(eval(source_code))
         return tuple(component_funcs)
@@ -455,6 +477,9 @@ class APFormFourierSeriesProcessor(FourierSeriesProcessor):
         phase = fft_found_peaks[0]['phase angle (rad)'].values[considered_peaks_index]
         self = APFormFourierSeriesProcessor(frequency=frequency, magnitude=magnitude, phase=phase)
         return self
+
+    def obtain_amplitude_and_phase_angle(self) -> dict:
+        return {'amplitude': self.magnitude, 'phase_angle': self.phase}
 
 
 class SCFormFourierSeriesProcessor(FourierSeriesProcessor):
@@ -508,6 +533,11 @@ class SCFormFourierSeriesProcessor(FourierSeriesProcessor):
                 )
 
         return tuple(final_results)
+
+    def obtain_amplitude_and_phase_angle(self) -> dict:
+        amplitude = np.sqrt(self.coefficient_a ** 2 + self.coefficient_b ** 2)
+        phase_angle = -np.arctan(self.coefficient_a ** 2 / self.coefficient_b)
+        return {'amplitude': amplitude, 'phase_angle': phase_angle}
 
 
 class AdvancedFFTProcessor:
@@ -587,8 +617,7 @@ class BayesianFFTProcessor(AdvancedFFTProcessor):
                                                         num_samples=300, warmup_steps=100)
         # DEBUG
 
-        tt=1
-
+        tt = 1
 
 
 class STFTProcessor(FFTProcessor):
@@ -691,7 +720,7 @@ class STFTProcessor(FFTProcessor):
             raise Exception("'nperseg' should be given")
         scipy_signal_stft_results = list(stft(self.original_signal, fs=self.sampling_frequency, **kwargs))
         if frequency_unit is not None:
-            scipy_signal_stft_results[0] *= self.SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
+            scipy_signal_stft_results[0] *= SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
                 frequency_unit
             )[-1]
         if time_axis_denominator is not None:

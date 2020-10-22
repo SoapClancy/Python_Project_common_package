@@ -31,13 +31,15 @@ class MethodOfBins:
         self.predictor_var = predictor_var  # type: ndarray
         self.dependent_var = dependent_var  # type: ndarray
         self.bin_step = bin_step
-        if first_bin_left_boundary is None:
-            first_bin_left_boundary = np.nanmin(self.predictor_var) - bin_step / 2
-        if last_bin_left_boundary is None:
-            last_bin_left_boundary = np.nanmax(self.predictor_var) - bin_step / 2
-        self.array_of_bin_boundary = self.__cal_array_of_bin_boundary(first_bin_left_boundary, last_bin_left_boundary)
-        self.considered_data_mask_for_mob_calculation = considered_data_mask_for_mob_calculation
-        self.__mob = self.__cal_mob()
+        if bin_step is not None:
+            if first_bin_left_boundary is None:
+                first_bin_left_boundary = np.nanmin(self.predictor_var) - bin_step / 2
+            if last_bin_left_boundary is None:
+                last_bin_left_boundary = np.nanmax(self.predictor_var) - bin_step / 2
+            self.array_of_bin_boundary = self.__cal_array_of_bin_boundary(first_bin_left_boundary,
+                                                                          last_bin_left_boundary)
+            self.considered_data_mask_for_mob_calculation = considered_data_mask_for_mob_calculation
+            self.__mob = self.__cal_mob()
 
     def __str__(self):
         return "MethodOfBins instance for {} recordings".format(self.predictor_var.size)

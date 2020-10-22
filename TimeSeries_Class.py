@@ -22,7 +22,7 @@ def merge_two_time_series_df(main_time_series_like_df: pd.DataFrame,
                              resolution: str = 'second',
                              do_interpolate: bool = True,
                              interpolate_method='time', *,
-                             both_tz_aware_or_not_aware: bool=False) -> pd.DataFrame:
+                             both_tz_aware_or_not_aware: bool = False) -> pd.DataFrame:
     """
     用于合并两个XXX_time_series_df。XXX_time_series_like_df指的是以datetime作为index的pd.DataFrame。
     和TimeSeries对象不同，XXX_time_series_like_df并不需要相邻的index的间隔一样，详见TimeSeries实例的_check_ordinal_time_delta
@@ -198,16 +198,17 @@ class TimeSeries(pd.DataFrame):
 
 class WindowedTimeSeries(TimeSeries):
     __slots__ = ('window_interval', 'window', 'window_length', '__iter_count')
+    _metadata = ["window_interval", "window", "window_length", "__iter_count"]
 
     def __init__(self, *args, window_length: datetime.timedelta, window: str = None,
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.window = window
         self.window_length = window_length
-        setattr(self, 'window_interval', self._cal_window_interval())
+        self.window_interval = self._cal_window_interval()
 
     def __repr__(self):
-        return super().__repr__() + f'window = {self.window}, ' \
+        return super().__repr__() + f', window = {self.window}, ' \
                                     f'window_length = {self.window_length}, ' \
                                     f'window_number = {self.__len__()}'
 

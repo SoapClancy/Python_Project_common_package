@@ -45,7 +45,6 @@ def scatter_density(x: ndarray, y: ndarray, ax=None, **kwargs):
 @show_fig
 # def series(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(8, 8 * 7 / 14.93),
 def series(x: Union[range, ndarray, Sequence], y: ndarray = None, ax=None, figure_size=(5, 5 * 0.618),
-
            **kwargs):
     @creat_fig(figure_size, ax)
     def plot(_ax):
@@ -82,8 +81,6 @@ def time_series(x_axis_format="%y-%m-%d %H", tz=None, **kwargs):
     x_lim = (kwargs['x'][0] - datetime.timedelta(seconds=1),
              kwargs['x'][-1] + datetime.timedelta(seconds=1))
     ax = series(figure_size=(10, 2.4), x_lim=x_lim, x_axis_format=x_axis_format, tz=tz, **kwargs)
-    # if x_axis_format:
-    #     ax.xaxis.set_major_formatter(mdates.DateFormatter(x_axis_format, tz=tz))
     return ax
 
 

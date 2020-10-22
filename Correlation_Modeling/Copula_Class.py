@@ -599,7 +599,7 @@ class VineGMCMCopula(VineCopula):
                     GMCM(gmcm_model_file_=this_edge_gmcm,
                          ndarray_data_in_uniform=self.all_vars_valid_data(np.stack((input_left, input_right), axis=1)),
                          gmcm_fitting_k=8,
-                         gmcm_max_fitting_iteration=3000,
+                         gmcm_max_fitting_iteration=10_000,
                          gmcm_fitting_attempt=1,
                          str_name='GMCM_{}'.format(str(self.resolved_construction['conditioned'][edge_idx]) + '|' +
                                                    str(self.resolved_construction['conditioning'][edge_idx]))))

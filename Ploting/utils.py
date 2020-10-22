@@ -6,7 +6,10 @@ import matplotlib.dates as mdates
 import pandas as pd
 import seaborn as sns
 from typing import Union, Sequence
+import datetime
+from locale import setlocale, LC_ALL
 
+setlocale(LC_ALL, "en_US")
 sns.set()
 
 
@@ -71,10 +74,10 @@ def show_fig(func):
         plt.yticks(*y_ticks, fontsize=10)
         plt.grid(True)
         # dates
-
-        if isinstance(kwargs.get('x'), pd.DatetimeIndex):
-            ax.xaxis.set_major_formatter(mdates.DateFormatter(x_axis_format,
-                                                              tz=tz))
+        if kwargs.get('x') is not None:
+            if isinstance(kwargs.get('x'), pd.DatetimeIndex) or isinstance(kwargs.get('x')[0], datetime.datetime):
+                ax.xaxis.set_major_formatter(mdates.DateFormatter(x_axis_format,
+                                                                  tz=tz))
         if all((isinstance(save_file_, str), isinstance(save_format, str))):
             plt.savefig(save_file_ + '.' + save_format, format=save_format, dpi=300)
 
