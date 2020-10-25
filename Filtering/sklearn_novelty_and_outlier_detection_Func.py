@@ -47,3 +47,4 @@ def use_optics_maximum_size(data: ndarray, optics_kwargs: dict = None):
 def use_dbscan(data: ndarray, dbscan_kwargs: dict = None):
     dbscan_kwargs = dbscan_kwargs or {}
     dbscan_labels = DBSCAN(n_jobs=-1, algorithm='auto', **dbscan_kwargs).fit_predict(data)
+    return dbscan_labels
