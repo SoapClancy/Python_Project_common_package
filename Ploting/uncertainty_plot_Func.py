@@ -65,7 +65,7 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
         # Infer the higher half percentiles as the inputs are only about lower tail
         higher_half_percentiles = uncertainty_like_dataframe.infer_higher_half_percentiles(lower_half_percentiles)
         # Get colour code
-        cmap = cm.get_cmap('bone')
+        cmap = cm.get_cmap('bone')  # 'copper', 'jet', 'cool', 'bone'
         norm = colors.Normalize(vmin=0, vmax=int(lower_half_percentiles.size))
         # For each pair of percentiles, add new plotting layer
         for i in range(lower_half_percentiles.size):
@@ -95,7 +95,7 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
                              )
         # Add new plotting layer for mean value
         _ax = series(x, uncertainty_like_dataframe.iloc[-2].values,
-                     color=(0, 1, 0), linestyle='--', ax=_ax, label='Mean')
+                     color='fuchsia', linestyle='--', ax=_ax, label='Mean')
         _ax = series(x, uncertainty_like_dataframe(by_percentile=50),
                      color='orange', linestyle='-', ax=_ax, label='Median')
         return _ax
