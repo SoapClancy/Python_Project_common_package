@@ -1,6 +1,6 @@
-# import matlab.engine
-# from matlab.mlarray import double, int64
-# import matlab
+import matlab.engine
+from matlab.mlarray import double, int64
+import matlab
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error
@@ -382,6 +382,9 @@ class GRUEncoderDecoderWrapper(torch.nn.Module):
 
 
 class TensorFlowLSTMEncoder(tf.keras.Model):
+    def get_config(self):
+        pass
+
     def __init__(self, *, hidden_size: int, training_mode: bool = True):
         super().__init__()
         self.training_mode = training_mode
@@ -433,6 +436,9 @@ class TensorFlowAttention(tf.keras.layers.Layer):
 
 
 class TensorFlowLSTMDecoder(tf.keras.Model):
+    def get_config(self):
+        pass
+
     def __init__(self, *, hidden_size: int, training_mode: bool = True, output_feature_len: int):
         super().__init__()
         self.training_mode = training_mode

@@ -7,6 +7,7 @@ import warnings
 from Ploting.fast_plot_Func import *
 from itertools import chain
 import re
+from scipy.interpolate import interp1d
 
 
 class ComplexNdarray(np.ndarray):
@@ -151,6 +152,12 @@ class UncertaintyDataFrame(pd.DataFrame):
                                                     data=two_dim_array[:, i])
         return cls(uncertainty_dataframe)
 
+    @property
+    def last_nan_index(self):
+        return [i for i, val in enumerate(self.index.values) if all(('Sigma' not in val,
+                                                                     'mean' not in val,
+                                                                     'std.' not in val))][-1]
+
     def infer_higher_half_percentiles(self, lower_half_percentiles: StrOneDimensionNdarray) -> StrOneDimensionNdarray:
         """
         Use lower half percentiles to infer higher half percentiles
@@ -158,7 +165,8 @@ class UncertaintyDataFrame(pd.DataFrame):
         higher_half_percentiles = []
         for this_lower_half_percentile in lower_half_percentiles:
             this_higher_half_percentile_index = np.argmin(
-                np.abs(self.index.values[:-2].astype(np.float) - (100 - float(this_lower_half_percentile)))
+                np.abs(self.index.values[:self.last_nan_index + 1].astype(np.float) -
+                       (100 - float(this_lower_half_percentile)))
             )
             higher_half_percentiles.append(self.index.values[this_higher_half_percentile_index])
         return StrOneDimensionNdarray(higher_half_percentiles)
@@ -170,7 +178,8 @@ class UncertaintyDataFrame(pd.DataFrame):
         return (100 - preserved_data_percentage) / 2, 100 - (100 - preserved_data_percentage) / 2
 
     def __call__(self, preserved_data_percentage: Union[int, float] = None, *,
-                 by_sigma: Union[int, float] = None):
+                 by_sigma: Union[int, float] = None,
+                 by_percentile: Union[int, float] = None, ):
         """
         This __call__ is to select the required percentage of data. For example, if x% data are to be preserved,
         then any data outside [(1-x)/2, 1-(1-x)/2] are to be preserved.
@@ -179,20 +188,30 @@ class UncertaintyDataFrame(pd.DataFrame):
 
         :param preserved_data_percentage:
         :param by_sigma:
+        :param by_percentile
         :return:
         """
-        error_msg = "Should specify either 'preserved_data_percentage' or 'preserved_data_percentage_by_sigma'"
-        assert (preserved_data_percentage != by_sigma), error_msg
-        if by_sigma is not None:
-            preserved_data_percentage = self.infer_percentile_boundaries_by_sigma(by_sigma)
+        if by_percentile is None:
+            error_msg = "Should specify either 'preserved_data_percentage' or 'preserved_data_percentage_by_sigma'"
+            assert (preserved_data_percentage != by_sigma), error_msg
+            if by_sigma is not None:
+                preserved_data_percentage = self.infer_percentile_boundaries_by_sigma(by_sigma)
+            else:
+                preserved_data_percentage = [(100 - preserved_data_percentage) / 2,
+                                             100 - (100 - preserved_data_percentage) / 2]
+
+            index_float = np.array(self.index[:self.last_nan_index + 1]).astype('float')
+            # TODO 向量化
+            index_select = [np.argmin(np.abs(index_float - x)) for x in preserved_data_percentage]
+            return pd.DataFrame(self).iloc[index_select, :]
         else:
-            preserved_data_percentage = [(100 - preserved_data_percentage) / 2,
-                                         100 - (100 - preserved_data_percentage) / 2]
-        last_nan_index = [i for i, val in enumerate(self.index.values) if 'Sigma' not in val][0]
-        index_float = np.array(self.index[:last_nan_index+1]).astype('float')
-        # TODO 向量化和插值
-        index_select = [np.argmin(np.abs(index_float - x)) for x in preserved_data_percentage]
-        return pd.DataFrame(self).iloc[index_select, :]
+            by_percentile = float(by_percentile)
+            index_float = np.array([float(x) for x in self.index[:self.last_nan_index + 1]])
+            results = np.array(
+                [float(interp1d(index_float, self.iloc[:, col_index][:self.last_nan_index + 1])(by_percentile))
+                 for col_index in range(self.columns.__len__())]
+            )
+            return results
 
     def update_one_column(self, column_name: Union[int, str], *, data: Union[OneDimensionNdarray, ndarray]):
         data = OneDimensionNdarray(data)

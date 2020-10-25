@@ -69,8 +69,6 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
         norm = colors.Normalize(vmin=0, vmax=int(lower_half_percentiles.size))
         # For each pair of percentiles, add new plotting layer
         for i in range(lower_half_percentiles.size):
-            if i < 32:
-                continue
             this_lower_half_percentile = lower_half_percentiles[i]
             this_higher_half_percentile = higher_half_percentiles[i]
             # Prepare for label-adding, according to the requirements (i.e., 'show_coverage_labels')
@@ -86,8 +84,8 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
                 alpha = None
             # Add new plotting layer for this pair of percentiles
             _ax.fill_between(x,
-                             uncertainty_like_dataframe.loc[this_lower_half_percentile].values,
-                             uncertainty_like_dataframe.loc[this_higher_half_percentile].values,
+                             uncertainty_like_dataframe(by_percentile=this_lower_half_percentile),
+                             uncertainty_like_dataframe(by_percentile=this_higher_half_percentile),
                              facecolor=cmap(1 - norm(i)),
                              edgecolor='k',
                              linewidth=0.25,
@@ -98,7 +96,7 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
         # Add new plotting layer for mean value
         _ax = series(x, uncertainty_like_dataframe.iloc[-2].values,
                      color=(0, 1, 0), linestyle='--', ax=_ax, label='Mean')
-        _ax = series(x, uncertainty_like_dataframe.loc['50.000'].values,
+        _ax = series(x, uncertainty_like_dataframe(by_percentile=50),
                      color='orange', linestyle='-', ax=_ax, label='Median')
         return _ax
 
