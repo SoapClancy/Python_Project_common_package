@@ -158,17 +158,19 @@ class UncertaintyDataFrame(pd.DataFrame):
                                                                      'mean' not in val,
                                                                      'std.' not in val))][-1]
 
-    def infer_higher_half_percentiles(self, lower_half_percentiles: StrOneDimensionNdarray) -> StrOneDimensionNdarray:
+    @staticmethod
+    def infer_higher_half_percentiles(lower_half_percentiles: StrOneDimensionNdarray) -> StrOneDimensionNdarray:
         """
         Use lower half percentiles to infer higher half percentiles
         """
         higher_half_percentiles = []
         for this_lower_half_percentile in lower_half_percentiles:
-            this_higher_half_percentile_index = np.argmin(
-                np.abs(self.index.values[:self.last_nan_index + 1].astype(np.float) -
-                       (100 - float(this_lower_half_percentile)))
-            )
-            higher_half_percentiles.append(self.index.values[this_higher_half_percentile_index])
+            # this_higher_half_percentile_index = np.argmin(
+            #     np.abs(self.index.values[:self.last_nan_index + 1].astype(np.float) -
+            #            (100 - float(this_lower_half_percentile)))
+            # )
+            this_higher_half_percentile_index = 100 - float(this_lower_half_percentile)
+            higher_half_percentiles.append(this_higher_half_percentile_index)
         return StrOneDimensionNdarray(higher_half_percentiles)
 
     @staticmethod
@@ -205,6 +207,7 @@ class UncertaintyDataFrame(pd.DataFrame):
             index_select = [np.argmin(np.abs(index_float - x)) for x in preserved_data_percentage]
             return pd.DataFrame(self).iloc[index_select, :]
         else:
+            print(by_percentile)
             by_percentile = float(by_percentile)
             index_float = np.array([float(x) for x in self.index[:self.last_nan_index + 1]])
             results = np.array(

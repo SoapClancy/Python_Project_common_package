@@ -83,6 +83,7 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
             else:
                 alpha = None
             # Add new plotting layer for this pair of percentiles
+            tt = 1
             _ax.fill_between(x,
                              uncertainty_like_dataframe(by_percentile=this_lower_half_percentile),
                              uncertainty_like_dataframe(by_percentile=this_higher_half_percentile),
