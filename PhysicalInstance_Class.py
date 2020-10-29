@@ -130,7 +130,7 @@ class PhysicalInstance:
         # %% constant mode
         if constant_error is not None:
             for this_dim, this_dim_error in constant_error.items():
-                rolling_obj = self.concerned_data().pd_view().rolling(*rolling_args, **rolling_kwargs)
+                rolling_obj = self.pd_view().rolling(*rolling_args, **rolling_kwargs)
                 desired_number = int(np.nanmax(rolling_obj.count().values))
                 this_boolean_array = np.isclose(rolling_obj.min()[this_dim], rolling_obj.max()[this_dim],
                                                 rtol=0, atol=this_dim_error)
