@@ -84,17 +84,17 @@ class DeepLearningDataSet:
             _transformed_cols_args['cos_sin_transformed_col'] = cos_sin_transformed_col_args
 
             # %% one_hot_transformed_col
-            one_hot_encoder = OneHotEncoder(handle_unknown='ignore')
-            one_hot_encoder.fit(self.data[list(self.transformed_cols_meta['one_hot_transformed_col'])].values)
-            for i, this_col in enumerate(self.transformed_cols_meta['one_hot_transformed_col']):
-                _new_multi_index_columns[this_col] = [(this_col, f'one_hot_{x}') for x in
-                                                      one_hot_encoder.categories_[i]]
+            if self.transformed_cols_meta['one_hot_transformed_col'] is not ():
+                one_hot_encoder = OneHotEncoder(handle_unknown='ignore')
+                one_hot_encoder.fit(self.data[list(self.transformed_cols_meta['one_hot_transformed_col'])].values)
+                for i, this_col in enumerate(self.transformed_cols_meta['one_hot_transformed_col']):
+                    _new_multi_index_columns[this_col] = [(this_col, f'one_hot_{x}') for x in
+                                                          one_hot_encoder.categories_[i]]
+                _transformed_cols_args['one_hot_transformed_col'] = one_hot_encoder
 
             # %% non_transformed_col
             for this_col in self.transformed_cols_meta['non_transformed_col']:
                 _new_multi_index_columns[this_col] = [(this_col, 'original')]
-
-            _transformed_cols_args['one_hot_transformed_col'] = one_hot_encoder
 
             return _transformed_cols_args, _new_multi_index_columns
 
@@ -112,10 +112,12 @@ class DeepLearningDataSet:
         trans = transformed_cols_args[_].transform(self.data[_index])
         transformed_data.loc[:, _index] = trans
         # %% one_hot_transformed_col
-        _ = 'one_hot_transformed_col'
-        _index = list(self.transformed_cols_meta[_])
-        trans = transformed_cols_args[_].transform(self.data[_index])
-        transformed_data.loc[:, _index] = trans.toarray().astype(int)
+        if self.transformed_cols_meta['one_hot_transformed_col'] is not ():
+            _ = 'one_hot_transformed_col'
+            _index = list(self.transformed_cols_meta[_])
+            trans = transformed_cols_args[_].transform(self.data[_index])
+            transformed_data.loc[:, _index] = trans.toarray().astype(int)
+
         # %% cos_sin_transformed_col
         _index = list(self.transformed_cols_meta['cos_sin_transformed_col'])
         for this_index in _index:
@@ -194,5 +196,5 @@ class DeepLearningDataSet:
             lambda window: (tf.gather(window, predictor_cols_index, axis=1),
                             tf.gather(window, dependant_cols_index, axis=1))
         )
-        transformed_data_ndarray = transformed_data_ndarray.batch(batch_size).prefetch(1)
+        transformed_data_ndarray = transformed_data_ndarray.batch(batch_size).prefetch(2)
         return transformed_data_ndarray
