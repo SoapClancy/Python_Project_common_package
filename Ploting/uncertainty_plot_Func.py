@@ -65,7 +65,7 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
         # Infer the higher half percentiles as the inputs are only about lower tail
         higher_half_percentiles = uncertainty_like_dataframe.infer_higher_half_percentiles(lower_half_percentiles)
         # Get colour code
-        cmap = cm.get_cmap('bone')  # 'copper', 'jet', 'cool', 'bone'
+        cmap = cm.get_cmap(kwargs.pop('cmap_name') if 'cmap_name' in kwargs else 'bone')  # 'copper', 'jet', 'cool'
         norm = colors.Normalize(vmin=0, vmax=int(lower_half_percentiles.size))
         # For each pair of percentiles, add new plotting layer
         for i in range(lower_half_percentiles.size):
@@ -81,13 +81,12 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
             if automatic_alpha_control:
                 alpha = np.linspace(0.5, 0, lower_half_percentiles.size)[i]
             else:
-                alpha = None
+                alpha = kwargs.pop('alpha') if 'alpha' in kwargs else None
             # Add new plotting layer for this pair of percentiles
-            tt = 1
             _ax.fill_between(x,
                              uncertainty_like_dataframe(by_percentile=this_lower_half_percentile),
                              uncertainty_like_dataframe(by_percentile=this_higher_half_percentile),
-                             facecolor=cmap(1 - norm(i)),
+                             facecolor=kwargs.pop('facecolor') if 'facecolor' in kwargs else cmap(1 - norm(i)),
                              edgecolor='k',
                              linewidth=0.25,
                              label=this_coverage_label,

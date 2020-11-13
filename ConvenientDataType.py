@@ -207,7 +207,6 @@ class UncertaintyDataFrame(pd.DataFrame):
             index_select = [np.argmin(np.abs(index_float - x)) for x in preserved_data_percentage]
             return pd.DataFrame(self).iloc[index_select, :]
         else:
-            print(by_percentile)
             by_percentile = float(by_percentile)
             index_float = np.array([float(x) for x in self.index[:self.last_nan_index + 1]])
             results = np.array(
