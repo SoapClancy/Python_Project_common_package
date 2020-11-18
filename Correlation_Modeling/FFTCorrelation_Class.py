@@ -252,8 +252,8 @@ class BivariateFFTCorrelation(FFTCorrelation):
         # 优先用lasso去fit (#强制利用use_lasso_fft_to_re_estimate)
         else:
             # 设置lasso默认参数
-            do_lasso_fitting_args = do_lasso_fitting_args or {'alpha': 0.005,
-                                                              'max_iter': 100_000,
+            do_lasso_fitting_args = do_lasso_fitting_args or {'alpha': 0.0001,
+                                                              'max_iter': 1_000_000,
                                                               'tol': 1e-8,
                                                               'random_state': 0}
             lasso_fitting = LASSOFFTProcessor(

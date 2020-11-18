@@ -79,6 +79,10 @@ def adjust_lim_label_ticks(ax, **kwargs):
             func = ax.set_xlabel
         elif key == 'y_label':
             func = ax.set_ylabel
+        elif key == 'x_tick_labels':
+            func = ax.set_xticklabels
+        elif key == 'y_tick_labels':
+            func = ax.set_yticklabels
         else:
             raise Exception("Unsupported keyword(s)")
         func(item)

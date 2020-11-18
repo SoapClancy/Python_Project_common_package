@@ -1,3 +1,4 @@
+# Copied from Matplotlib official docs
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
