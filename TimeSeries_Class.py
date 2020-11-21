@@ -14,6 +14,7 @@ import isoweek
 from Time_Processing.datetime_utils import find_nearest_datetime_idx_in_datetime_iterable
 from scipy.signal import get_window
 import re
+import warnings
 
 
 def merge_two_time_series_df(main_time_series_like_df: pd.DataFrame,
@@ -37,6 +38,8 @@ def merge_two_time_series_df(main_time_series_like_df: pd.DataFrame,
     :param both_tz_aware_or_not_aware
     :return:
     """
+    warnings.warn("Now know how to deal with day-saving time issues --- just convert back to UTC and then"
+                  "manually + int to force it consistent", DeprecationWarning)
     main_time_series_like_df = copy.deepcopy(main_time_series_like_df)
     new_time_series_like_df = copy.deepcopy(new_time_series_like_df)
     if both_tz_aware_or_not_aware:
