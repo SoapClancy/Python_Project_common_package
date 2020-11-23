@@ -22,6 +22,9 @@ import copy
 from Time_Processing.datetime_utils import datetime_one_hot_encoder
 import torch
 import tensorflow as tf
+from Ploting.fast_plot_Func import *
+
+tf.keras.backend.set_floatx("float64")
 
 
 def use_min_max_scaler_and_save(data_to_be_normalised: ndarray, file_: str, **kwargs):
@@ -381,38 +384,54 @@ class GRUEncoderDecoderWrapper(torch.nn.Module):
         self.eval()
 
 
-class TensorFlowLSTMEncoder(tf.keras.Model):
+class TensorFlowCovBiLSTMEncoder(tf.keras.Model):
     def get_config(self):
         pass
 
-    def __init__(self, *, hidden_size: int, training_mode: bool = True):
+    def __init__(self, *,
+                 training_mode: bool = True,
+                 conv1d_layer_filters: int = 32,
+                 lstm_layer_hidden_size: int):
         super().__init__()
         self.training_mode = training_mode
-        self.hidden_size = hidden_size
-
-        self.lstm_layer = tf.keras.layers.LSTM(hidden_size,
+        # Convolutional 1D
+        self.conv1d_layer = tf.keras.layers.Conv1D(filters=conv1d_layer_filters, kernel_size=3,
+                                                   strides=1, padding="causal",
+                                                   activation="relu",
+                                                   dtype='float64')
+        # %% Bidirectional LSTM layer
+        # TODO 改成BiLSTM，改成多层
+        self.lstm_layer_hidden_size = lstm_layer_hidden_size
+        self.lstm_layer = tf.keras.layers.LSTM(lstm_layer_hidden_size,
                                                return_sequences=True,
-                                               return_state=True)
+                                               return_state=True,
+                                               dtype='float64')
 
-    def call(self, x, h_0_c_0_list):
-        lstm_layer_output, h_n, c_n = self.lstm_layer(inputs=x,
+    def call(self, x=None, h_0_c_0_list=None, **kwargs):
+        conv1d_layer_output = self.conv1d_layer(inputs=x,
+                                                training=self.training_mode)
+        lstm_layer_output, h_n, c_n = self.lstm_layer(inputs=conv1d_layer_output,
                                                       training=self.training_mode,
                                                       initial_state=h_0_c_0_list)
         return lstm_layer_output, [h_n, c_n]
 
     def initialize_h_0_c_0(self, batch_size: int) -> list:
-        return [tf.zeros((batch_size, self.hidden_size)), tf.zeros((batch_size, self.hidden_size))]
+        return [tf.zeros((batch_size, self.lstm_layer_hidden_size), dtype='float64'),
+                tf.zeros((batch_size, self.lstm_layer_hidden_size), dtype='float64')]
 
 
-class TensorFlowAttention(tf.keras.layers.Layer):
+class TensorFlowBahdanauAttention(tf.keras.layers.Layer):
     # ref: https://www.tensorflow.org/tutorials/text/nmt_with_attention
     def __init__(self, units):
         super().__init__()
-        self.W1 = tf.keras.layers.Dense(units)
-        self.W2 = tf.keras.layers.Dense(units)
-        self.V = tf.keras.layers.Dense(1)
+        self.W1 = tf.keras.layers.Dense(units, dtype='float64')
+        self.W2 = tf.keras.layers.Dense(units, dtype='float64')
+        self.V = tf.keras.layers.Dense(1, dtype='float64')
 
-    def call(self, query, values):
+    def call(self, query=None, values=None, **kwargs):
+        # https://stats.stackexchange.com/questions/421935/what-exactly-are-keys-queries-and-values-in-attention-mechanisms#
+        #  query is our decoder_states and value is our encoder_outputs.
+
         # TODO: This attention only cares about h_n
         # query hidden state shape == (batch_size, hidden size)
         # query_with_time_axis shape == (batch_size, 1, hidden size)
@@ -439,18 +458,21 @@ class TensorFlowLSTMDecoder(tf.keras.Model):
     def get_config(self):
         pass
 
-    def __init__(self, *, hidden_size: int, training_mode: bool = True, output_feature_len: int):
+    def __init__(self, *, training_mode: bool = True,
+                 lstm_layer_hidden_size: int,
+                 output_feature_len: int):
         super().__init__()
         self.training_mode = training_mode
-        self.hidden_size = hidden_size
+        self.lstm_layer_hidden_size = lstm_layer_hidden_size
 
-        self.lstm_layer = tf.keras.layers.LSTM(hidden_size,
+        self.lstm_layer = tf.keras.layers.LSTM(lstm_layer_hidden_size,
                                                return_sequences=True,
-                                               return_state=True)
-        self.fully_connected_layer = tf.keras.layers.Dense(output_feature_len)
-        self.attention = TensorFlowAttention(self.hidden_size)
+                                               return_state=True,
+                                               dtype='float64')
+        self.fully_connected_layer = tf.keras.layers.Dense(output_feature_len, dtype='float64')
+        self.attention = TensorFlowBahdanauAttention(self.lstm_layer_hidden_size)
 
-    def call(self, x, h_0_c_0_list, encoder_output):
+    def call(self, x=None, h_0_c_0_list=None, encoder_output=None, **kwargs):
         # enc_output shape == (batch_size, max_length, hidden_size)
         context_vector, attention_weights = self.attention(
             query=h_0_c_0_list[0],  # Only h_0 will be used for attention
@@ -459,14 +481,15 @@ class TensorFlowLSTMDecoder(tf.keras.Model):
         # context_vector = h_0_c_0_list[0]
         # attention_weights = None
         # x shape after concatenation == (batch_size, 1, x_dim + hidden_size)
-        x = tf.concat([tf.expand_dims(context_vector, 1), tf.expand_dims(x, 1)],
+        x = tf.concat([tf.expand_dims(context_vector, 1), x],
                       axis=-1)
 
         # passing the concatenated vector to the LSTM
         lstm_layer_output, h_n, c_n = self.lstm_layer(x,
                                                       training=self.training_mode)
         # output shape == (batch_size, output_feature_len)
-        x = self.fully_connected_layer(lstm_layer_output)
+        x = self.fully_connected_layer(lstm_layer_output,
+                                       training=self.training_mode)
         return x, [h_n, c_n], attention_weights
 
 
@@ -500,3 +523,44 @@ class MatlabLSTM:
         eng.quit()
         result = np.asarray(result)
         return result
+
+
+class GradientsAnalyser:
+    __slots__ = ("gradients", "predictor_names")
+
+    def __init__(self, gradients: ndarray, predictor_names: List[str]):
+        assert gradients.ndim == 3
+
+        self.gradients = gradients
+        self.predictor_names = predictor_names
+
+    def aggregate_over_cos_sin_and_one_hot(self, apply_abs_op: bool = True) -> Tuple[ndarray, List[str]]:
+        multi_index = pd.MultiIndex.from_tuples(self.predictor_names)
+        new_predictor_names = multi_index.get_level_values(0).drop_duplicates()
+        new_gradients = np.full((*self.gradients.shape[:-1], new_predictor_names.__len__()), np.nan)
+        for i, this_gradient in enumerate(self.gradients):
+            this_gradient_df = pd.DataFrame(data=this_gradient, columns=multi_index)
+            for j, this_new_predictor_name in enumerate(new_predictor_names):
+                df = this_gradient_df[this_new_predictor_name]
+                new_gradients[i, :, j] = np.mean(np.abs(df.values) if apply_abs_op else df.values, axis=1)
+
+        return new_gradients, new_predictor_names.tolist()
+
+    def aggregate_over_all_samples(self, apply_abs_op: bool = True) -> Tuple[ndarray, List[str]]:
+        new_gradients, new_predictor_names = self.aggregate_over_cos_sin_and_one_hot(apply_abs_op=apply_abs_op)
+        new_gradients = np.mean(new_gradients, axis=0)
+        return new_gradients, new_predictor_names
+
+    @staticmethod
+    def plot(gradients, predictor_names, plot_total_steps: bool = True, plot_individual_steps: bool = False):
+        if gradients.ndim == 2:
+            gradients = gradients[np.newaxis, ...]
+        if plot_total_steps:
+            for this_gradient in gradients:
+                stem(predictor_names, np.mean(this_gradient, 0), x_ticks_rotation=90)
+        if plot_individual_steps:
+            ax = None
+            for this_gradient in gradients:
+                this_gradient = this_gradient.T
+                for i, this_dim in enumerate(this_gradient):
+                    ax = series(this_dim, ax=ax, label=predictor_names[i])
