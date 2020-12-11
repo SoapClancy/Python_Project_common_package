@@ -552,12 +552,16 @@ class GradientsAnalyser:
         return new_gradients, new_predictor_names
 
     @staticmethod
-    def plot(gradients, predictor_names, plot_total_steps: bool = True, plot_individual_steps: bool = False):
+    def plot(gradients, predictor_names, *, plot_total_steps: bool = True,
+             plot_individual_steps: bool = False, log_scale: bool = False):
         if gradients.ndim == 2:
             gradients = gradients[np.newaxis, ...]
         if plot_total_steps:
             for this_gradient in gradients:
-                stem(predictor_names, np.mean(this_gradient, 0), x_ticks_rotation=90)
+                y = np.mean(this_gradient, 0)
+                if log_scale:
+                    y = np.log10(y)
+                stem(predictor_names, y, x_ticks_rotation=90)
         if plot_individual_steps:
             ax = None
             for this_gradient in gradients:
