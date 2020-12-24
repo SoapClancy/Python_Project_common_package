@@ -204,8 +204,13 @@ class UncertaintyDataFrame(pd.DataFrame):
 
             index_float = np.array(self.index[:self.last_nan_index + 1]).astype('float')
             # TODO 向量化
-            index_select = [np.argmin(np.abs(index_float - x)) for x in preserved_data_percentage]
-            return pd.DataFrame(self).iloc[index_select, :]
+            results = np.array(
+                [[float(interp1d(index_float, self.iloc[:, col_index][:self.last_nan_index + 1])(this_percentile))
+                  for col_index in range(self.columns.__len__())] for this_percentile in preserved_data_percentage]
+            )
+            # return pd.DataFrame(self).iloc[index_select, :]
+            return pd.DataFrame(results, columns=self.columns)
+
         else:
             by_percentile = float(by_percentile)
             index_float = np.array([float(x) for x in self.index[:self.last_nan_index + 1]])
