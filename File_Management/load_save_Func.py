@@ -25,7 +25,7 @@ def save_npy_file(file_path: Path, array):
     np.save(file_path, array)
 
 
-def load_exist_npy_file_otherwise_run_and_save(file_path:Path):
+def load_exist_npy_file_otherwise_run_and_save(file_path: Path):
     if not re.match(r".*\.npy$", str(file_path)):
         raise Exception("'file_path' should end with '.npy'")
 
@@ -59,6 +59,9 @@ def save_pkl_file(file_path: Path, obj):
 
 
 def load_pkl_file(file_path: Path):
+    if not re.match(r".*\.pkl$", str(file_path)):
+        raise Exception("'file_path' should end with '.pkl'")
+
     file_path = str(file_path)
     if try_to_find_file(file_path) is False:
         return None
@@ -82,6 +85,24 @@ def load_exist_pkl_file_otherwise_run_and_save(file_path: Path):
                 obj = func(*args, **kwargs)
                 save_pkl_file(file_path, obj)
                 return obj
+
+        return wrapper
+
+    return decorator
+
+
+def update_exist_pkl_file_otherwise_run_and_save(file_path: Path):
+    if not re.match(r".*\.pkl$", str(file_path)):
+        raise Exception("'file_path' should end with '.pkl'")
+    assert try_to_find_file(file_path)
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            existing_file = load_pkl_file(file_path)
+            obj = func(*args, existing_file=existing_file, ** kwargs)
+            save_pkl_file(file_path, obj)
+            return obj
 
         return wrapper
 
