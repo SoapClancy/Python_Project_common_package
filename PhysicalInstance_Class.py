@@ -50,9 +50,14 @@ class PhysicalInstance:
         return new_instance
 
     def __str__(self):
-        t1 = eval("self.index[0].strftime('%Y-%m-%d %H.%M')")
-        t2 = eval("self.index[-1].strftime('%Y-%m-%d %H.%M')")
-        return f"{self.obj_name} {self.__class__.__name__} from {t1} to {t2}"
+        try:
+            t1 = eval("self.index[0].strftime('%Y-%m-%d %H.%M')")
+            t2 = eval("self.index[-1].strftime('%Y-%m-%d %H.%M')")
+            return f"{self.obj_name} {self.__class__.__name__} from {t1} to {t2}"
+        except AttributeError:
+            return f"{self.obj_name} {self.__class__.__name__} from " \
+                   f"self.index[0] = {self.__getattribute__('index')[0]} to " \
+                   f"self.index[-1]{self.__getattribute__('index')[-1]}"
 
     # %%
     # ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓

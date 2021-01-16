@@ -129,7 +129,8 @@ class DataCategoryData:
 
     def report(self, report_pd_to_csv_file_path: Path = None, *,
                abbreviation_rename_mapper: dict = None,
-               sorted_kwargs: dict = None):
+               sorted_kwargs: dict = None,
+               save_to_buffer=False):
         abbreviation_unique = np.unique(self.abbreviation)
         abbreviation_unique = sorted(abbreviation_unique, **(sorted_kwargs or {}))
         report_pd = pd.DataFrame(index=abbreviation_unique,
@@ -139,20 +140,23 @@ class DataCategoryData:
             report_pd.loc[this_outlier, 'number'] = this_outlier_number
             report_pd.loc[this_outlier, 'percentage'] = this_outlier_number / self.abbreviation.shape[0] * 100
         report_pd.rename(index=abbreviation_rename_mapper or {}, inplace=True)
-        bar(report_pd.index, report_pd['percentage'].values, y_label="Recording Percentage [%]",
-            autolabel_format="{:.2f}", y_lim=(-1, 85),
-            x_ticks_rotation=45)
+        ax_1 = bar(report_pd.index, report_pd['percentage'].values, y_label="Recording Percentage [%]",
+                   autolabel_format="{:.2f}", y_lim=(-1, 85),
+                   x_ticks_rotation=45, save_to_buffer=save_to_buffer)
 
-        bar(report_pd.index, report_pd['number'].values, y_label="Recording Number",
-            autolabel_format="{:.0f}", y_lim=(-1, np.max(report_pd['number'].values) * 1.2),
-            x_ticks_rotation=45)
+        ax_2 = bar(report_pd.index, report_pd['number'].values, y_label="Recording Number",
+                   autolabel_format="{:.0f}", y_lim=(-1, np.max(report_pd['number'].values) * 1.2),
+                   x_ticks_rotation=45, save_to_buffer=save_to_buffer)
         if report_pd_to_csv_file_path is not None:
             report_pd.to_csv(report_pd_to_csv_file_path)
             self.name_mapper.to_csv(report_pd_to_csv_file_path.parent / 'name_mapper.csv')
             pd.merge(report_pd, self.name_mapper.pd_view, how='left',
                      left_index=True,
                      right_on='abbreviation').to_csv(report_pd_to_csv_file_path.parent / 'report_with_name_mapper.csv')
-        return report_pd
+        if not save_to_buffer:
+            return report_pd
+        else:
+            return ax_1, ax_2
 
 
 if __name__ == '__main__':
