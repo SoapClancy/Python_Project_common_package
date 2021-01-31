@@ -96,9 +96,9 @@ class OneDimMarkovChain:
     @staticmethod
     def __cal_cdf(*, state_markov_chain_pmf: ndarray):
         cdf = np.cumsum(state_markov_chain_pmf, axis=1)
-        max_on_row = cdf[:, -1].reshape(-1, 1)
-        max_on_row = np.tile(max_on_row, (1, cdf.shape[1]))
-        cdf = cdf / max_on_row * (1 - float_eps)
+        # max_on_row = cdf[:, -1].reshape(-1, 1)
+        # max_on_row = np.tile(max_on_row, (1, cdf.shape[1]))
+        # cdf = cdf / max_on_row * (1 - float_eps)
         return cdf
 
     def sample_the_next_from_current_state(self, *, current_state, number_of_samples: int = 1,
@@ -122,7 +122,7 @@ class OneDimMarkovChain:
             col_idx = [np.argwhere(cdf > now)[0].item() for now in uniform_rnd]
             results = output_domain[col_idx]
         if output_digitize and resample:
-            results = np.random.uniform(results[:, 0], results[:, 1])
+            results = np.random.uniform(results[:, 0], results[:, 2])
         return results
 
     def get_next_state_pmf_from_current_state(self, current_state):
@@ -137,22 +137,26 @@ class OneDimMarkovChain:
 
     def get_next_digitize_range_from_current_raw(self, current_raw,
                                                  percentiles: Sequence[Union[int, float]], *,
-                                                 method: str = "interpolation", resample: bool):
+                                                 method: str = "interpolation"):
         assert method in ("interpolation", "sampling")
         # transfer raw to state
         current_state = self.raw_to_state_func(current_raw)
 
         if method == "interpolation":
             cdf = self.get_next_state_cdf_from_current_state(current_state)
-            interp = interp1d(cdf, self.state_to_digitize_func(self.unique_state)[:, 1])
+            interp = interp1d(cdf, self.state_to_digitize_func(self.unique_state)[:, 1], assume_sorted=True)
             results = interp(np.array(percentiles) / 100)
         else:
+            # Must set resample as True, otherwise the results are kind of in singularity case when
+            # there are just several possible discrete candidates
             samples = self.sample_the_next_from_current_state(current_state=current_state, number_of_samples=1_000_000,
-                                                              output_digitize=True, resample=resample)
+                                                              output_digitize=True, resample=True)
             results = np.percentile(samples, percentiles)
+            # results = np.percentile(samples[:, 1], percentiles)
+
         return results
 
-    def get_next_digitize_mean_from_current_raw(self, current_raw, *, method: str = "weighted average", resample: bool):
+    def get_next_digitize_mean_from_current_raw(self, current_raw, *, method: str = "weighted average"):
         assert method in ("weighted average", "sampling")
         # transfer raw to state
         current_state = self.raw_to_state_func(current_raw)
@@ -161,7 +165,11 @@ class OneDimMarkovChain:
             pmf = self.get_next_state_pmf_from_current_state(current_state)
             results = np.average(self.state_to_digitize_func(self.unique_state)[:, 1], weights=pmf)
         else:
+            # Must set resample as True, otherwise the results are kind of in singularity case when
+            # there are just several possible discrete candidates
             samples = self.sample_the_next_from_current_state(current_state=current_state, number_of_samples=1_000_000,
-                                                              output_digitize=True, resample=resample)
+                                                              output_digitize=True, resample=True)
             results = np.mean(samples)
+            # results = np.mean(samples[:, 1])
+
         return results
