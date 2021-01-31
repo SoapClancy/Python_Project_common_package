@@ -78,11 +78,11 @@ class OneDimMarkovChain:
                 number_of_transition = np.sum(np.bitwise_and(mask_current, mask_next))
                 state_markov_chain[row_idx, col_idx] = number_of_transition
         state_markov_chain_pmf = self.__cal_pmf(state_markov_chain=state_markov_chain)
-        state_markov_chain_cmf = self.__cal_cmf(state_markov_chain_pmf=state_markov_chain_pmf)
+        state_markov_chain_cdf = self.__cal_cdf(state_markov_chain_pmf=state_markov_chain_pmf)
         return {
             'numbers': state_markov_chain,  # type: ndarray
             'pmf': state_markov_chain_pmf,  # type: ndarray
-            'cmf': state_markov_chain_cmf,  # type: ndarray
+            'cdf': state_markov_chain_cdf,  # type: ndarray
             'name': self.unique_state  # type:ndarray
         }
 
@@ -94,12 +94,12 @@ class OneDimMarkovChain:
         return state_markov_chain_pmf
 
     @staticmethod
-    def __cal_cmf(*, state_markov_chain_pmf: ndarray):
-        cmf = np.cumsum(state_markov_chain_pmf, axis=1)
-        max_on_row = cmf[:, -1].reshape(-1, 1)
-        max_on_row = np.tile(max_on_row, (1, cmf.shape[1]))
-        cmf = cmf / max_on_row * (1 - float_eps)
-        return cmf
+    def __cal_cdf(*, state_markov_chain_pmf: ndarray):
+        cdf = np.cumsum(state_markov_chain_pmf, axis=1)
+        max_on_row = cdf[:, -1].reshape(-1, 1)
+        max_on_row = np.tile(max_on_row, (1, cdf.shape[1]))
+        cdf = cdf / max_on_row * (1 - float_eps)
+        return cdf
 
     def sample_the_next_from_current_state(self, *, current_state, number_of_samples: int = 1,
                                            output_digitize: bool, resample: bool):
@@ -118,8 +118,8 @@ class OneDimMarkovChain:
             results = output_domain[col_idx]
         else:
             uniform_rnd = np.random.rand(number_of_samples)
-            cmf = self.get_next_state_cmf_from_current_state(current_state)
-            col_idx = [np.argwhere(cmf > now)[0].item() for now in uniform_rnd]
+            cdf = self.get_next_state_cdf_from_current_state(current_state)
+            col_idx = [np.argwhere(cdf > now)[0].item() for now in uniform_rnd]
             results = output_domain[col_idx]
         if output_digitize and resample:
             results = np.random.uniform(results[:, 0], results[:, 1])
@@ -130,10 +130,10 @@ class OneDimMarkovChain:
         pmf = self.state_markov_chain_in_matrix['pmf'][row_idx, :]
         return pmf.flatten()
 
-    def get_next_state_cmf_from_current_state(self, current_state):
+    def get_next_state_cdf_from_current_state(self, current_state):
         row_idx = current_state == self.unique_state
-        cmf = self.state_markov_chain_in_matrix['cmf'][row_idx, :]
-        return cmf.flatten()
+        cdf = self.state_markov_chain_in_matrix['cdf'][row_idx, :]
+        return cdf.flatten()
 
     def get_next_digitize_range_from_current_raw(self, current_raw,
                                                  percentiles: Sequence[Union[int, float]], *,
@@ -143,8 +143,8 @@ class OneDimMarkovChain:
         current_state = self.raw_to_state_func(current_raw)
 
         if method == "interpolation":
-            cmf = self.get_next_state_cmf_from_current_state(current_state)
-            interp = interp1d(cmf, self.state_to_digitize_func(self.unique_state)[:, 1])
+            cdf = self.get_next_state_cdf_from_current_state(current_state)
+            interp = interp1d(cdf, self.state_to_digitize_func(self.unique_state)[:, 1])
             results = interp(np.array(percentiles) / 100)
         else:
             samples = self.sample_the_next_from_current_state(current_state=current_state, number_of_samples=1_000_000,
