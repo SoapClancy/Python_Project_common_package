@@ -234,6 +234,7 @@ classdef gmcdistribution
         end
     
         function partial_derivative = cdf_partial_derivative2(obj, u, pos)
+            %%另一种方法 https://blogs.sas.com/content/iml/2013/09/20/gradient-of-the-bivariate-normal-cumulative-distribution.html
             % Only two dims are supported
             K = size(obj.mu,1);
             d = size(obj.mu,2);

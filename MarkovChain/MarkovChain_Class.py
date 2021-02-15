@@ -17,7 +17,7 @@ class OneDimMarkovChain:
      If the obj is initialised by using init_from_one_dim_ndarray, then state is also the indices of digitize bins
     """
 
-    def __init__(self, *, current_state: ndarray = None, next_state: ndarray = None,
+    def __init__(self, *, current_state: ndarray = None, next_state: ndarray = None, use_laplace_smooth: bool,
                  state_markov_chain_in_matrix: dict = None,
                  raw_to_state_func: Callable = None, state_to_digitize_func: Callable = None,
                  use_tensorflow_probability: bool = True):
@@ -28,6 +28,7 @@ class OneDimMarkovChain:
         assert (build_new_mc_bool or use_existing_mc_bool) and not (build_new_mc_bool and use_existing_mc_bool)
 
         self.use_tensorflow_probability = use_tensorflow_probability
+        self.use_laplace_smooth = use_laplace_smooth
         if not use_tensorflow_probability:
             warnings.warn("TensorFlow Probability (TFP) function will not be used, which may result in significant "
                           "performance issues! Please consider to use TFP")
@@ -44,7 +45,8 @@ class OneDimMarkovChain:
         self.state_to_digitize_func = state_to_digitize_func
 
     @classmethod
-    def init_from_one_dim_ndarray(cls, one_dim_ndarray: ndarray, resolution: Union[float, int]):
+    def init_from_one_dim_ndarray(cls, one_dim_ndarray: ndarray, resolution: Union[float, int],
+                                  use_laplace_smooth: bool):
         one_dim_ndarray = OneDimensionNdarray(one_dim_ndarray)
         one_dim_ndarray = one_dim_ndarray[~np.isnan(one_dim_ndarray)]
         _min = np.min(one_dim_ndarray).item()
@@ -65,7 +67,8 @@ class OneDimMarkovChain:
             return np.stack(np.frompyfunc(python_func, 1, 1)(_state))
 
         self = cls(current_state=state[:-1], next_state=state[1:],
-                   raw_to_state_func=raw_to_state_func, state_to_digitize_func=state_to_digitize_func)
+                   raw_to_state_func=raw_to_state_func, state_to_digitize_func=state_to_digitize_func,
+                   use_laplace_smooth=use_laplace_smooth)
         return self
 
     def cal_state_markov_chain_in_matrix(self) -> dict:
@@ -86,19 +89,18 @@ class OneDimMarkovChain:
             'name': self.unique_state  # type:ndarray
         }
 
-    @staticmethod
-    def __cal_pmf(*, state_markov_chain: ndarray):
+    def __cal_pmf(self, *, state_markov_chain: ndarray):
         sum_on_row = np.sum(state_markov_chain, axis=1).reshape(-1, 1)
         sum_on_row = np.tile(sum_on_row, (1, state_markov_chain.shape[1]))
         state_markov_chain_pmf = state_markov_chain / sum_on_row
+        if self.use_laplace_smooth:
+            alpha = 1e-6
+            state_markov_chain_pmf = (state_markov_chain + alpha) / (sum_on_row + alpha * self.unique_state.size)
         return state_markov_chain_pmf
 
     @staticmethod
     def __cal_cdf(*, state_markov_chain_pmf: ndarray):
         cdf = np.cumsum(state_markov_chain_pmf, axis=1)
-        # max_on_row = cdf[:, -1].reshape(-1, 1)
-        # max_on_row = np.tile(max_on_row, (1, cdf.shape[1]))
-        # cdf = cdf / max_on_row * (1 - float_eps)
         return cdf
 
     def sample_the_next_from_current_state(self, *, current_state, number_of_samples: int = 1,

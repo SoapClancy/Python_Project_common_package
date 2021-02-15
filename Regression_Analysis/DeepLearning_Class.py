@@ -1,134 +1,227 @@
-import matlab.engine
-from matlab.mlarray import double, int64
-import matlab
-import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_squared_error
-from sklearn.preprocessing import MinMaxScaler
-from Ploting.fast_plot_Func import series, time_series, hist, scatter
-import copy
-from project_utils import project_path_
-from numpy import ndarray
-from File_Management.load_save_Func import load_exist_pkl_file_otherwise_run_and_save
-import os
-from File_Management.path_and_file_management_Func import try_to_find_folder_path_otherwise_make_one
-from Data_Preprocessing import float_eps
-from Time_Processing.format_convert_Func import datetime64_ndarray_to_datetime_tuple
-from File_Management.path_and_file_management_Func import try_to_find_file
-from python_project_common_path_Var import python_project_common_path_
-from typing import Tuple, List
-import random
-import copy
-from Time_Processing.datetime_utils import datetime_one_hot_encoder
+from typing import Tuple, List, Callable
 import torch
 import tensorflow as tf
 from Ploting.fast_plot_Func import *
+import tensorflow_probability as tfp
+import edward2 as ed
 
-tf.keras.backend.set_floatx("float64")
+tfd = eval("tfp.distributions")
+tfpl = eval("tfp.layers")
 
-
-def use_min_max_scaler_and_save(data_to_be_normalised: ndarray, file_: str, **kwargs):
-    """
-    将MinMaxScaler作用于training set。并将min和max储存到self.results_path
-    :return:
-    """
-
-    @load_exist_pkl_file_otherwise_run_and_save(file_)
-    def data_scaling():
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        return scaler
-
-    scaled_data = data_scaling.fit_transform(data_to_be_normalised)
-    return scaled_data
+tf.keras.backend.set_floatx('float32')
 
 
-def shift_and_concatenate_data(data_to_be_sc, shift: int, **kwargs):
-    """
+class BayesianConv1DBiLSTM:
+    __slots__ = ("input_shape", "output_shape", "batch_size",
+                 "conv1d_hypers", "conv1d_layer_count", "use_encoder_decoder",
+                 "maxpool1d_hypers",
+                 "bilstm_hypers", "bilstm_layer_count",
+                 "dense_hypers",
+                 "dist_hypers")
 
-    :param data_to_be_sc:
-    :param shift: 负数代表往past移动
-    :return:
-    """
-    dims = data_to_be_sc.shape[1]
-    results = np.full((data_to_be_sc.shape[0], abs(shift) * data_to_be_sc.shape[1]), np.nan)
-    for i in range(abs(shift)):
-        results[:, i * dims:(i + 1) * dims] = np.roll(data_to_be_sc, int(i * shift / shift), axis=0)
-    # results[:abs(shift)] = np.nan
+    def __init__(self, *,
+                 input_shape: Sequence,
+                 output_shape: Sequence,
+                 batch_size: int,
+                 conv1d_layer_count: int = 1,
+                 bilstm_layer_count: int = 1,
+                 use_encoder_decoder: bool,
+                 **kwargs):
+        self.input_shape = input_shape
+        self.output_shape = output_shape
+        self.batch_size = batch_size
+        self.conv1d_layer_count = conv1d_layer_count
+        self.bilstm_layer_count = bilstm_layer_count
+        self.use_encoder_decoder = use_encoder_decoder
 
-    results_final = np.full((data_to_be_sc.shape[0], abs(shift) * data_to_be_sc.shape[1]), np.nan)
-    for i in range(dims):
-        results_final[:, i * abs(shift):(i + 1) * abs(shift)] = results[:, -1 - i::-dims]
+        # %% Bayesian Conv1D hyper parameters and their default values
+        self.conv1d_hypers = {
+            "filters": kwargs.get("conv1d_hypers_filters", 8),
+            "kernel_size": kwargs.get("conv1d_hypers_kernel_size", 5),
+            "activation": kwargs.get("conv1d_hypers_activation", "relu"),
+            "padding": kwargs.get("conv1d_hypers_padding", "valid"),
+            "input_shape": self.input_shape,
+            "kernel_prior_fn": kwargs.get("conv1d_hypers_kernel_prior_fn", self.get_conv1d_kernel_prior_fn()),
+            "kernel_posterior_fn": kwargs.get("conv1d_hypers_kernel_posterior_fn",
+                                              self.get_conv1d_kernel_posterior_fn()),
+            "kernel_divergence_fn": kwargs.get("conv1d_hypers_kernel_divergence_fn",
+                                               self.get_conv1d_kernel_divergence_fn()),
+            "bias_prior_fn": kwargs.get("conv1d_hypers_bias_prior_fn", self.get_conv1d_bias_prior_fn()),
+            "bias_posterior_fn": kwargs.get("conv1d_hypers_bias_posterior_fn",
+                                            self.get_conv1d_bias_posterior_fn()),
+            "bias_divergence_fn": kwargs.get("conv1d_hypers_bias_divergence_fn",
+                                             self.get_conv1d_bias_divergence_fn())
+        }
 
-    return results_final
+        # %% Bayesian MaxPooling hyper parameters and their default values
+        self.maxpool1d_hypers = {
+            "pool_size": kwargs.get("maxpool1d_hypers_pool_size", 5),
+            "padding": kwargs.get("maxpool1d_hypers_padding", "valid")
+        }
 
+        # %% Bayesian BiLSTM hyper parameters and their default values
+        self.bilstm_hypers = {
+            "units": kwargs.get("bilstm_hypers_units", 32),
+        }
 
-def get_training_mask_in_train_validation_set(train_validation_set_len: int, validation_pct: float):
-    training_mask = np.full((train_validation_set_len,), True)
-    training_mask[random.choices(range(training_mask.__len__()),
-                                 k=int(training_mask.__len__() * validation_pct))] = False
-    return training_mask
+        # %% Distribution layer parameters and their default values
 
+        self.dist_hypers = {
+            "num_components": kwargs.get("dist_hypers_num_components", 3),
+        }
 
-def prepare_data_for_nn(*, datetime_: ndarray = None, x: ndarray, y: ndarray,
-                        validation_pct: float,
-                        x_time_step: int = None,
-                        y_time_step: int = None, path_: str,
-                        **kwargs) -> Tuple[ndarray, ndarray, ndarray, ndarray]:
-    """
-    准备数据给nn训练
-    :param datetime_: 时间特征
-    :param x:
-    :param y:
-    :param validation_pct:
-    :param x_time_step:
-    :param y_time_step:
-    :param path_:
-    :return:
-    """
-    x, y = copy.deepcopy(x), copy.deepcopy(y)
-    if x.ndim == 1:
-        x = x.reshape(-1, 1)
-    if y.ndim == 1:
-        y = y.reshape(-1, 1)
-    # scaler
-    x_training_validation_set_core = use_min_max_scaler_and_save(x, file_=path_ + 'x_scaler.pkl')
-    y_training_validation_set_core = use_min_max_scaler_and_save(y, file_=path_ + 'y_scaler.pkl')
-    # shift_and_concatenate_data
-    if (x_time_step is not None) and (y_time_step is not None):
-        x_training_validation_set_core = shift_and_concatenate_data(x_training_validation_set_core, -1 * x_time_step)
-        y_training_validation_set_core = np.roll(y_training_validation_set_core, -y_time_step, axis=0)
-        y_training_validation_set_core = shift_and_concatenate_data(y_training_validation_set_core, y_time_step)
-    # 包含时间数据
-    if datetime_ is not None:
-        datetime_ = datetime_one_hot_encoder(datetime_, **kwargs)
-        x_train_validation = np.concatenate((datetime_,
-                                             x_training_validation_set_core),
-                                            axis=1)
-    else:
-        x_train_validation = x_training_validation_set_core
-    y_train_validation = y_training_validation_set_core
+        # %% Bayesian Dense hyper parameters and their default values
+        self.dense_hypers = {
+            "units": tfpl.MixtureSameFamily.params_size(
+                num_components=self.dist_hypers["num_components"],
+                component_params_size=tfpl.MultivariateNormalTriL.params_size(self.output_shape[1])
+            ),
+            "make_prior_fn": kwargs.get("dense_hypers_make_prior_fn", self.get_dense_make_prior_fn()),
+            "make_posterior_fn": kwargs.get("dense_hypers_make_posterior_fn", self.get_dense_make_posterior_fn()),
+            "kl_weight": kwargs.get("dense_hypers_kl_weight", self.kl_weight),
+        }
 
-    if (x_time_step is not None) and (y_time_step is not None):
-        # 截断无用数据
-        x_train_validation = x_train_validation[x_time_step:]
-        y_train_validation = y_train_validation[x_time_step:]
-        # 非连续的选取
-        # x_train_validation = x_train_validation[::y_time_step]
-        # y_train_validation = y_train_validation[::y_time_step]
+    def build(self):
+        layers = [self.get_convolution1d_reparameterization_layer() for _ in range(self.conv1d_layer_count)]
+        layers = [tf.keras.layers.LocallyConnected1D(filters=8, kernel_size=5, input_shape=self.input_shape)]
+        layers.append(tf.keras.layers.MaxPooling1D(**self.maxpool1d_hypers)),
+        if self.bilstm_layer_count == 0:
+            layers.append(tf.keras.layers.Flatten())
+        else:
+            layers.extend([self.get_bilstm_reparameterization_layer(True if i < self.bilstm_layer_count - 1 else False)
+                           for i in range(self.bilstm_layer_count)])
+            layers.append(tf.keras.layers.RepeatVector(self.output_shape[0]))
+            if self.use_encoder_decoder:
+                layers.append(self.get_bilstm_reparameterization_layer(True))
+        layers.append(self.get_dense_variational_layer())
+        layers.append(self.get_distribution_layer())
+        model = tf.keras.Sequential(layers)
+        return model
 
-    # 依据validation_pct，选取train和validation
-    training_mask = get_training_mask_in_train_validation_set(x_train_validation.shape[0], validation_pct)
+    # Function to define the spike and slab distribution
+    @staticmethod
+    def spike_and_slab(event_shape, dtype):
+        distribution = tfd.Mixture(
+            cat=tfd.Categorical(probs=tf.cast([0.5, 0.5], dtype=dtype)),
+            components=[
+                tfd.Independent(tfd.Normal(
+                    loc=tf.zeros(event_shape, dtype=dtype),
+                    scale=1.0 * tf.ones(event_shape, dtype=dtype)),
+                    reinterpreted_batch_ndims=1),
+                tfd.Independent(tfd.Normal(
+                    loc=tf.zeros(event_shape, dtype=dtype),
+                    scale=10.0 * tf.ones(event_shape, dtype=dtype)),
+                    reinterpreted_batch_ndims=1)],
+            name='spike_and_slab')
+        return distribution
 
-    # 划分train和validation
-    x_train = x_train_validation[training_mask, :]
-    y_train = y_train_validation[training_mask, :]
-    x_validation = x_train_validation[~training_mask, :]
-    y_validation = y_train_validation[~training_mask, :]
-    return x_train, y_train, x_validation, y_validation
+    @property
+    def kl_weight(self):
+        return 1 / self.batch_size
 
+    @staticmethod
+    def get_conv1d_kernel_prior_fn():
+        return tfpl.default_multivariate_normal_fn
 
-class BayesCOVN1DLSTM:
-    pass
+    @staticmethod
+    def get_conv1d_kernel_posterior_fn():
+        return tfpl.default_mean_field_normal_fn(is_singular=False)
+
+    def get_conv1d_kernel_divergence_fn(self):
+        return lambda q, p, _: tfd.kl_divergence(q, p) * self.kl_weight
+
+    @staticmethod
+    def get_conv1d_bias_prior_fn():
+        return tfpl.default_multivariate_normal_fn
+
+    @staticmethod
+    def get_conv1d_bias_posterior_fn():
+        return tfpl.default_mean_field_normal_fn(is_singular=False)
+
+    def get_conv1d_bias_divergence_fn(self):
+        return lambda q, p, _: tfd.kl_divergence(q, p) * self.kl_weight
+
+    def get_convolution1d_reparameterization_layer(self) -> tfpl.Convolution1DReparameterization:
+        assert self
+        interesting_hypers = ("filters", "kernel_size", "activation", "padding", "input_shape",
+                              "kernel_prior_fn", "kernel_posterior_fn", "kernel_divergence_fn",
+                              "bias_prior_fn", "bias_posterior_fn", "bias_divergence_fn")
+        args_source_code = """""".join([f'{x} = self.conv1d_hypers["{x}"],\n' for x in interesting_hypers])
+        conv1d_layer = eval(f"tfpl.Convolution1DReparameterization({args_source_code})")
+        return conv1d_layer
+
+    def get_bilstm_kernel_regularizer(self):
+        return ed.tensorflow.regularizers.NormalKLDivergence(mean=0., stddev=1., scale_factor=self.kl_weight)
+
+    def get_bilstm_recurrent_regularizer(self):
+        return ed.tensorflow.regularizers.NormalKLDivergence(mean=0., stddev=1., scale_factor=self.kl_weight)
+
+    def get_bilstm_reparameterization_layer(self, return_sequences):
+        bilstm_cell = ed.layers.LSTMCellReparameterization(**self.bilstm_hypers,
+                                                           kernel_regularizer=self.get_bilstm_kernel_regularizer(),
+                                                           recurrent_regularizer=self.get_bilstm_kernel_regularizer())
+        bilstm_layer = tf.keras.layers.Bidirectional(tf.keras.layers.RNN(bilstm_cell,
+                                                                         return_sequences=return_sequences))
+        return bilstm_layer
+
+    def get_dense_make_prior_fn(self):
+        def dense_make_prior_fn(kernel_size, bias_size, dtype=tf.float32):
+            n = kernel_size + bias_size
+            prior_model = tf.keras.Sequential([
+                tfpl.DistributionLambda(
+                    lambda t: self.spike_and_slab(n, dtype)
+                )
+            ])
+            return prior_model
+
+        return dense_make_prior_fn
+
+    @staticmethod
+    def get_dense_make_posterior_fn():
+        def dense_make_posterior_fn(kernel_size, bias_size, dtype=tf.float32):
+            n = kernel_size + bias_size
+            posterior_model = tf.keras.Sequential([
+                tfpl.VariableLayer(tfpl.IndependentNormal.params_size(n), dtype=dtype),
+                tfpl.IndependentNormal(n)
+            ])
+            return posterior_model
+
+        return dense_make_posterior_fn
+
+    def get_dense_variational_layer(self):
+        assert self
+        interesting_hypers = ("units", "make_prior_fn", "make_posterior_fn", "kl_weight")
+        args_source_code = """""".join([f'{x} = self.dense_hypers["{x}"],\n' for x in interesting_hypers])
+        dense_layer = eval(f"tfpl.DenseVariational({args_source_code})")
+        return dense_layer
+
+    def get_distribution_layer(self, dtype=tf.float32):
+        # dist_layer = tfpl.DistributionLambda(
+        #     make_distribution_fn=lambda t: tfd.Independent(
+        #         tfd.Mixture(
+        #             cat=tfd.Categorical(probs=tf.cast([[1 / 3, 1 / 3, 1 / 3] for i in range(6)], dtype=dtype)),
+        #             components=[tfd.Independent(tfd.Normal(loc=tf.zeros(1*6, dtype=dtype),
+        #                                                    scale=1.0 * tf.ones(1*6, dtype=dtype)),
+        #                                         reinterpreted_batch_ndims=1)
+        #                         for j in range(3)]
+        #         ),
+        #         reinterpreted_batch_ndims=1
+        #     ),
+        #     convert_to_tensor_fn=lambda s: s.sample()
+        # )
+
+        dist_layer = tfpl.MixtureSameFamily(num_components=self.dist_hypers["num_components"],
+                                            component_layer=tfpl.MultivariateNormalTriL(self.output_shape[1]),
+                                            convert_to_tensor_fn=tfd.Distribution.sample)
+
+        # dist_layer = tfpl.IndependentNormal(event_shape=self.output_shape,
+        #                                     convert_to_tensor_fn=tfd.Distribution.sample)
+
+        # dist_layer = tfpl.MultivariateNormalTriL(self.output_shape[0] * self.output_shape[1])
+        # dist_layer = tfpl.MixtureNormal(num_components=self.dist_hypers["num_components"],
+        #                                 event_shape=self.output_shape)
+        return dist_layer
 
 
 class StackedBiLSTM(torch.nn.Module):
@@ -398,14 +491,14 @@ class TensorFlowCovBiLSTMEncoder(tf.keras.Model):
         self.conv1d_layer = tf.keras.layers.Conv1D(filters=conv1d_layer_filters, kernel_size=3,
                                                    strides=1, padding="causal",
                                                    activation="relu",
-                                                   dtype='float64')
+                                                   dtype='float32')
         # %% Bidirectional LSTM layer
         # TODO 改成BiLSTM，改成多层
         self.lstm_layer_hidden_size = lstm_layer_hidden_size
         self.lstm_layer = tf.keras.layers.LSTM(lstm_layer_hidden_size,
                                                return_sequences=True,
                                                return_state=True,
-                                               dtype='float64')
+                                               dtype='float32')
 
     def call(self, x=None, h_0_c_0_list=None, **kwargs):
         conv1d_layer_output = self.conv1d_layer(inputs=x,
@@ -416,17 +509,17 @@ class TensorFlowCovBiLSTMEncoder(tf.keras.Model):
         return lstm_layer_output, [h_n, c_n]
 
     def initialize_h_0_c_0(self, batch_size: int) -> list:
-        return [tf.zeros((batch_size, self.lstm_layer_hidden_size), dtype='float64'),
-                tf.zeros((batch_size, self.lstm_layer_hidden_size), dtype='float64')]
+        return [tf.zeros((batch_size, self.lstm_layer_hidden_size), dtype='float32'),
+                tf.zeros((batch_size, self.lstm_layer_hidden_size), dtype='float32')]
 
 
 class TensorFlowBahdanauAttention(tf.keras.layers.Layer):
     # ref: https://www.tensorflow.org/tutorials/text/nmt_with_attention
     def __init__(self, units):
         super().__init__()
-        self.W1 = tf.keras.layers.Dense(units, dtype='float64')
-        self.W2 = tf.keras.layers.Dense(units, dtype='float64')
-        self.V = tf.keras.layers.Dense(1, dtype='float64')
+        self.W1 = tf.keras.layers.Dense(units, dtype='float32')
+        self.W2 = tf.keras.layers.Dense(units, dtype='float32')
+        self.V = tf.keras.layers.Dense(1, dtype='float32')
 
     def call(self, query=None, values=None, **kwargs):
         # https://stats.stackexchange.com/questions/421935/what-exactly-are-keys-queries-and-values-in-attention-mechanisms#
@@ -468,8 +561,8 @@ class TensorFlowLSTMDecoder(tf.keras.Model):
         self.lstm_layer = tf.keras.layers.LSTM(lstm_layer_hidden_size,
                                                return_sequences=True,
                                                return_state=True,
-                                               dtype='float64')
-        self.fully_connected_layer = tf.keras.layers.Dense(output_feature_len, dtype='float64')
+                                               dtype='float32')
+        self.fully_connected_layer = tf.keras.layers.Dense(output_feature_len, dtype='float32')
         self.attention = TensorFlowBahdanauAttention(self.lstm_layer_hidden_size)
 
     def call(self, x=None, h_0_c_0_list=None, encoder_output=None, **kwargs):
@@ -491,38 +584,6 @@ class TensorFlowLSTMDecoder(tf.keras.Model):
         x = self.fully_connected_layer(lstm_layer_output,
                                        training=self.training_mode)
         return x, [h_n, c_n], attention_weights
-
-
-class MatlabLSTM:
-    __slots__ = ('lstm_file_',)
-
-    def __init__(self, lstm_file_: str):
-        self.lstm_file_ = lstm_file_
-
-    def train(self, x_train, y_train, x_validation, y_validation, max_epochs):
-        if not try_to_find_file(self.lstm_file_):
-            eng = matlab.engine.start_matlab()
-            eng.addpath(python_project_common_path_ + r'Regression_Analysis\LSTM_MATLAB', nargout=0)
-            eng.train_LSTM_and_save(double(x_train.tolist()),
-                                    double(y_train.tolist()),
-                                    double(x_validation.tolist()),
-                                    double(y_validation.tolist()),
-                                    self.lstm_file_,
-                                    max_epochs,
-                                    nargout=0)
-            eng.quit()
-
-    def test(self, x_test):
-        if not try_to_find_file(self.lstm_file_):
-            raise Exception("没有找到训练好的模型: {}".format(self.lstm_file_))
-        eng = matlab.engine.start_matlab()
-        eng.addpath(python_project_common_path_ + r'Regression_Analysis\LSTM_MATLAB', nargout=0)
-        result = eng.load_LSTM_and_predict(double(x_test.tolist()),
-                                           self.lstm_file_,
-                                           nargout=1)
-        eng.quit()
-        result = np.asarray(result)
-        return result
 
 
 class GradientsAnalyser:

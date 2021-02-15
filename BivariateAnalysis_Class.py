@@ -175,7 +175,8 @@ class MethodOfBins:
                 mob_statistic = np.full((self.array_of_bin_boundary.shape[0], 2), np.nan)
                 mob_statistic[:, 0] = self.array_of_bin_boundary[:, 1]
                 for i, this_bin in enumerate(self.mob.values()):
-                    if this_bin['this_bin_is_empty']:
+                    # if this_bin['this_bin_is_empty']:
+                    if this_bin['dependent_var_in_this_bin'].__len__() == 0:
                         continue
                     else:
                         mob_statistic[i, 1] = np.nanmean(this_bin['dependent_var_in_this_bin'])

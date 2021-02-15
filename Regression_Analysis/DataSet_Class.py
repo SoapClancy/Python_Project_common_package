@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Tuple, Sequence
+from typing import Tuple, Sequence, Generator, Callable, List
 import pandas as pd
 from Ploting.fast_plot_Func import *
 from pathlib import Path
@@ -7,7 +7,7 @@ import tensorflow as tf
 from File_Management.path_and_file_management_Func import *
 from File_Management.load_save_Func import *
 from functools import reduce
-from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
 from Data_Preprocessing.TruncatedOrCircularToLinear_Class import CircularToLinear
 from itertools import chain
 import warnings
@@ -22,6 +22,7 @@ class DeepLearningDataSet:
                  name: str,
                  cos_sin_transformed_col: Tuple[str, ...] = (),
                  min_max_transformed_col: Tuple[str, ...] = (),
+                 standard_transformed_col: Tuple[str, ...] = (),
                  one_hot_transformed_col: Tuple[str, ...] = (),
                  non_transformed_col: Tuple[str, ...] = (),
                  predictor_cols: Tuple[str, ...] = (),
@@ -31,14 +32,13 @@ class DeepLearningDataSet:
                  stacked_shift_size: Tuple[datetime.timedelta, ...] = (),
                  how_many_stacked: Tuple[int, ...] = ()):
         assert ('training' in name) or ('test' in name)
-        assert (predictor_cols or dependant_cols) != ()
-        assert not ((predictor_cols != ()) and (dependant_cols != ()))
 
         self.data = original_data_set  # type: pd.DataFrame
         self.name = name
         self.transformed_cols_meta = {
             'cos_sin_transformed_col': cos_sin_transformed_col,
             'min_max_transformed_col': min_max_transformed_col,
+            'standard_transformed_col': standard_transformed_col,
             'one_hot_transformed_col': one_hot_transformed_col,
             'non_transformed_col': non_transformed_col
         }
@@ -57,13 +57,19 @@ class DeepLearningDataSet:
 
     @property
     def considered_cols_list(self):
-        return list(chain(*self.transformed_cols_meta.values()))
+        cols = list(chain(*self.transformed_cols_meta.values()))
+        assert set(cols) == set(self.data.columns)
+        return cols
 
     def _infer_predictor_and_dependant_cols(self, predictor_cols, dependant_cols):
-        if predictor_cols != ():
-            return predictor_cols, list(set(self.considered_cols_list) - set(predictor_cols))
-        else:
+        if predictor_cols != () and dependant_cols == ():
+            return list((predictor_cols, list(set(self.considered_cols_list) - set(predictor_cols))))
+        elif predictor_cols == () and dependant_cols != ():
             return list(set(self.considered_cols_list) - set(dependant_cols)), dependant_cols
+        elif predictor_cols != () and dependant_cols != ():
+            return list((predictor_cols, dependant_cols))
+        else:
+            raise
 
     def _preprocess(self):
         # %% Obtain the args for transformation
@@ -72,11 +78,20 @@ class DeepLearningDataSet:
             _transformed_cols_args = {key: None for key in self.transformed_cols_meta}
             _new_multi_index_columns = {key: None for key in self.considered_cols_list}
             # %% min_max_transformed_col
-            min_max_scaler = MinMaxScaler()
-            min_max_scaler.fit(self.data[list(self.transformed_cols_meta['min_max_transformed_col'])].values)
-            _transformed_cols_args['min_max_transformed_col'] = min_max_scaler
-            for this_col in self.transformed_cols_meta['min_max_transformed_col']:
-                _new_multi_index_columns[this_col] = [(this_col, 'min_max')]
+            if self.transformed_cols_meta['min_max_transformed_col'] != ():
+                min_max_scaler = MinMaxScaler()
+                min_max_scaler.fit(self.data[list(self.transformed_cols_meta['min_max_transformed_col'])].values)
+                _transformed_cols_args['min_max_transformed_col'] = min_max_scaler
+                for this_col in self.transformed_cols_meta['min_max_transformed_col']:
+                    _new_multi_index_columns[this_col] = [(this_col, 'min_max')]
+
+            # %% standard_transformed_col
+            if self.transformed_cols_meta['standard_transformed_col'] != ():
+                standard_scaler = StandardScaler()
+                standard_scaler.fit(self.data[list(self.transformed_cols_meta['standard_transformed_col'])].values)
+                _transformed_cols_args['standard_transformed_col'] = standard_scaler
+                for this_col in self.transformed_cols_meta['standard_transformed_col']:
+                    _new_multi_index_columns[this_col] = [(this_col, 'standard')]
 
             # %% cos_sin_transformed_col
             cos_sin_transformed_col_args = {key: None for key in self.transformed_cols_meta['cos_sin_transformed_col']}
@@ -111,11 +126,13 @@ class DeepLearningDataSet:
                                               names=('feature', 'notes')),
             dtype=float
         )
-        # %% min_max_transformed_col and
-        _ = 'min_max_transformed_col'
-        _index = list(self.transformed_cols_meta[_])
-        trans = transformed_cols_args[_].transform(self.data[_index])
-        transformed_data.loc[:, _index] = trans
+        # %% min_max_transformed_col and standard_transformed_col
+        for _ in ('min_max_transformed_col', 'standard_transformed_col'):
+            if self.transformed_cols_meta[_] != ():
+                _index = list(self.transformed_cols_meta[_])
+                trans = transformed_cols_args[_].transform(self.data[_index])
+                transformed_data.loc[:, _index] = trans
+
         # %% one_hot_transformed_col
         if self.transformed_cols_meta['one_hot_transformed_col'] != ():
             _ = 'one_hot_transformed_col'
@@ -145,13 +162,17 @@ class DeepLearningDataSet:
         for i, this_name in enumerate(names):
             if ("cos" in this_name) or ("sin" in this_name) or ("one_hot" in this_name):
                 raise NotImplemented
-            elif "min_max" in this_name:
-                index = self.transformed_cols_meta['min_max_transformed_col'].index(this_name[0])
-                min_max_scaler_obj = transformed_cols_args['min_max_transformed_col']
-                poxy_ndarray = np.full((data_ndarray.shape[1], min_max_scaler_obj.n_features_in_), np.nan)
+            elif "min_max" in this_name or "standard" in this_name:
+                if "min_max" in this_name:
+                    index = self.transformed_cols_meta['min_max_transformed_col'].index(this_name[0])
+                    scaler_obj = transformed_cols_args['min_max_transformed_col']
+                else:
+                    index = self.transformed_cols_meta['standard_transformed_col'].index(this_name[0])
+                    scaler_obj = transformed_cols_args['standard_transformed_col']
+                poxy_ndarray = np.full((data_ndarray.shape[1], scaler_obj.n_features_in_), np.nan)
                 for j in range(data_ndarray.shape[0]):
                     poxy_ndarray[:, index] = data_ndarray[j, :, i]
-                    data_ndarray_inverse_transformed[j, :, i] = min_max_scaler_obj.inverse_transform(
+                    data_ndarray_inverse_transformed[j, :, i] = scaler_obj.inverse_transform(
                         poxy_ndarray)[:, index]
         return data_ndarray_inverse_transformed
 
@@ -187,18 +208,25 @@ class DeepLearningDataSet:
         copied.transformed_data = copied.transformed_data[mask]
         return copied
 
-    def windowed_dataset(self, window_length: datetime.timedelta, *,
-                         window_drop_remainder=True,
-                         batch_drop_remainder=False,
-                         batch_size: int,
-                         shift=None) -> Tuple[tf.data.Dataset, ndarray, list, list]:
-        tt = 1
-        assert np.unique(np.diff(self.transformed_data.index.values)).size == 1
-        freq = (self.transformed_data.index.values[1] - self.transformed_data.index.values[0]) / np.timedelta64(1, 's')
-        window_size = int(window_length.total_seconds() / freq)
+    def windowed_dataset(
+            self, *,
+            x_window_length: datetime.timedelta,
+            y_window_length: datetime.timedelta,
+            x_y_start_index_diff: datetime.timedelta,
+            window_shift: datetime.timedelta,
+            batch_drop_remainder=False,
+            batch_size: int,
 
-        transformed_data_ndarray = self.transformed_data.values
-        transformed_data_index = self.transformed_data.index
+    ) -> Tuple[tf.data.Dataset, Callable, pd.DataFrame, pd.DataFrame]:
+        assert np.unique(np.diff(self.transformed_data.index.values)).size == 1
+        # Meta info for sliding window
+        freq = (self.transformed_data.index.values[1] - self.transformed_data.index.values[0]) / np.timedelta64(1, 's')
+        x_window_size = int(x_window_length.total_seconds() / freq)
+        y_window_size = int(y_window_length.total_seconds() / freq)
+        x_y_start_index_diff_size = int(x_y_start_index_diff.total_seconds() / freq)
+        window_shift_size = int(window_shift.total_seconds() / freq)
+
+        # Get col index info
         predictor_cols_index = np.unique(list(
             chain(*[list(self.transformed_data.columns.__getattribute__('get_locs')([x]))
                     for x in self.predictor_cols],
@@ -207,40 +235,39 @@ class DeepLearningDataSet:
         dependant_cols_index = list(chain(*[list(self.transformed_data.columns.__getattribute__('get_locs')([x]))
                                             for x in self.dependant_cols]))
         dependant_cols_index = [i for i in dependant_cols_index if 'shift' not in self.transformed_data.columns[i][1]]
-        assert (predictor_cols_index.__len__() + dependant_cols_index.__len__()) == self.transformed_data.shape[1]
-
         predictor_cols_index.sort()
         dependant_cols_index.sort()
 
-        # %% Remove any nan
-        i = 0
-        remove_mask = np.full(len(transformed_data_ndarray), False)
-        while True:
-            i_next = i + window_size
-            if np.any(np.isnan(transformed_data_ndarray[i:min((i_next, transformed_data_ndarray.shape[0]))])):
-                remove_mask[i:min((i_next, transformed_data_ndarray.shape[0]))] = True
-            if i_next > transformed_data_ndarray.shape[0]:
-                break
-            i = i_next
+        # Make data
+        data_x = self.transformed_data.iloc[:, predictor_cols_index]
+        data_y = self.transformed_data.iloc[x_y_start_index_diff_size:, dependant_cols_index]
 
-        transformed_data_ndarray = transformed_data_ndarray[~remove_mask]
-        transformed_data_index = transformed_data_index[~remove_mask]
+        def data_generator(return_tf_constant: bool = True):
+            i = 0
+            while True:
+                x_slice = slice(i, i + x_window_size)
+                y_slice = slice(i, i + y_window_size)
+                if x_slice.stop > data_x.shape[0] or y_slice.stop > data_y.shape[0]:
+                    break
+                x_sliced_data = data_x.values[x_slice]
+                y_sliced_data = data_y.values[y_slice]
+                if np.any(np.isnan(x_sliced_data)) or np.any(np.isnan(y_sliced_data)):
+                    i += window_shift_size
+                    continue
+                else:
+                    if return_tf_constant:
+                        yield tf.constant(x_sliced_data, dtype=tf.float32), tf.constant(y_sliced_data, dtype=tf.float32)
+                    else:
+                        yield data_x[x_slice], data_y[y_slice]
+                i += window_shift_size
 
-        transformed_data_ndarray = tf.data.Dataset.from_tensor_slices(transformed_data_ndarray)
-        transformed_data_ndarray = transformed_data_ndarray.window(window_size,
-                                                                   shift=shift or window_size,
-                                                                   drop_remainder=window_drop_remainder)
-        transformed_data_ndarray = transformed_data_ndarray.flat_map(
-            lambda window: window.batch(window_size, drop_remainder=window_drop_remainder)
+        dataset = tf.data.Dataset.from_generator(
+            data_generator,
+            output_signature=(
+                tf.TensorSpec(shape=(x_window_size, predictor_cols_index.__len__()), dtype=tf.float32),
+                tf.TensorSpec(shape=(y_window_size, dependant_cols_index.__len__()), dtype=tf.float32))
         )
-        transformed_data_ndarray = transformed_data_ndarray.map(
-            lambda window: (tf.gather(window, predictor_cols_index, axis=1),
-                            tf.gather(window, dependant_cols_index, axis=1))
-        )
-        transformed_data_ndarray = transformed_data_ndarray.batch(batch_size, drop_remainder=batch_drop_remainder)
-        transformed_data_ndarray = transformed_data_ndarray.prefetch(2)
-        # transformed_data_ndarray.dtype = 'float64'
-        return (transformed_data_ndarray,
-                np.reshape(np.array(transformed_data_index), (-1, window_size)),  # Time stamp array
-                list(self.transformed_data.columns[predictor_cols_index]),
-                list(self.transformed_data.columns[dependant_cols_index]))
+
+        dataset = dataset.batch(batch_size, drop_remainder=batch_drop_remainder)
+        dataset = dataset.prefetch(2)
+        return dataset, data_generator, data_x, data_y
