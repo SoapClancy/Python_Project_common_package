@@ -13,6 +13,11 @@ import re
 import tensorflow as tf
 import tensorflow_probability as tfp
 from ConvenientDataType import IntFloatConstructedOneDimensionNdarray
+import edward2 as ed
+
+tfd = eval("tfp.distributions")
+tfpl = eval("tfp.layers")
+tfb = eval("tfp.bijectors")
 
 
 class Univariate:
@@ -402,15 +407,15 @@ class UnivariateGaussianMixtureModel(UnivariateProbabilisticModel):
                                                                    self.gmm.weights_)
 
     @property
-    def view_as_tfp_distribution(self) -> tfp.distributions.MixtureSameFamily:
+    def view_as_tfp_distribution(self) -> tfd.MixtureSameFamily:
         """
         leverage TensorFlowProbability for further calculation
         :return:
         """
-        tfp_distribution = tfp.distributions.MixtureSameFamily(
-            mixture_distribution=tfp.distributions.Categorical(
+        tfp_distribution = tfd.MixtureSameFamily(
+            mixture_distribution=tfd.Categorical(
                 probs=self.gmm.weights_.astype(np.float32)),
-            components_distribution=tfp.distributions.Normal(
+            components_distribution=tfd.Normal(
                 loc=self.gmm.means_.squeeze().astype(np.float32),
                 scale=np.sqrt(self.gmm.covariances_.squeeze()).astype(np.float32))
         )
@@ -480,7 +485,7 @@ class UnivariateGaussianMixtureModel(UnivariateProbabilisticModel):
         :return:
         """
         cdf_value = IntFloatConstructedOneDimensionNdarray(cdf_value)
-        results = np.percentile(self.sample(number_of_samples), cdf_value*100)
+        results = np.percentile(self.sample(number_of_samples), cdf_value * 100)
         return results
 
 

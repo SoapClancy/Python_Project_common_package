@@ -84,7 +84,7 @@ class BayesianConv1DBiLSTM:
 
     def build(self):
         layers = [self.get_convolution1d_reparameterization_layer() for _ in range(self.conv1d_layer_count)]
-        layers = [tf.keras.layers.LocallyConnected1D(filters=8, kernel_size=5, input_shape=self.input_shape)]
+        # layers = [tf.keras.layers.LocallyConnected1D(filters=8, kernel_size=5, input_shape=self.input_shape)]
         layers.append(tf.keras.layers.MaxPooling1D(**self.maxpool1d_hypers)),
         if self.bilstm_layer_count == 0:
             layers.append(tf.keras.layers.Flatten())

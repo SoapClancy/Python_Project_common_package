@@ -208,6 +208,10 @@ class PhysicalInstance:
         else:
             return pd.DataFrame(self)
 
+    @property
+    def concerned_dim(self):
+        return list(self.dependant_names) + list(self.predictor_names)
+
     def concerned_data(self: Union[pd.DataFrame, pd.Series]):
         """
         This function return a slice of the instance, where the columns only contain predictor_names and dependant_names

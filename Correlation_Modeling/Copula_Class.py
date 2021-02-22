@@ -22,6 +22,7 @@ from pathlib import Path
 
 THREE_DIM_CVINE_CONSTRUCTION = ((1, 2), (1, 3), (2, 3, 1))
 FOUR_DIM_CVINE_CONSTRUCTION = ((1, 2), (1, 3), (1, 4), (2, 3, 1), (2, 4, 1), (3, 4, 1, 2))
+eng = matlab.engine.start_matlab()
 
 
 class Copula(metaclass=ABCMeta):
@@ -58,20 +59,32 @@ class Copula(metaclass=ABCMeta):
             if self.ndarray_data_in_uniform is not None:
                 n = int(self.ndarray_data_in_uniform.shape[0] * 1.2)
             else:
-                n = 50_000
+                n = 100_000
         sim = self.simulate(n)
         x_label = kwargs.pop('x_label') if 'x_label' in kwargs else 'sim_x1'
         y_label = kwargs.pop('y_label') if 'y_label' in kwargs else 'sim_x2'
-        title = kwargs.pop('title') if 'title' in kwargs else self.str_name
-        return scatter_density(sim[:, 0], sim[:, 1], x_label=x_label, y_label=y_label,
+        title = kwargs.pop('title') + self.str_name if 'title' in kwargs else self.str_name
+        # scatter(sim[:, 0], sim[:, 1], x_label=x_label, y_label=y_label,
+        #         x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title, **kwargs)
+        truncated_density_length = n
+        if self.ndarray_data_in_uniform is not None:
+            if n > self.ndarray_data_in_uniform.shape[0] * 10:
+                truncated_density_length = self.ndarray_data_in_uniform.shape[0] * 10
+
+        return scatter_density(sim[:truncated_density_length, 0], sim[:truncated_density_length, 1],
+                               x_label=x_label, y_label=y_label,
                                x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title, **kwargs)
 
     def plot_ndarray_data_in_uniform(self, **kwargs):
         """
         只支持2维
         """
+        title = kwargs.pop("title") + self.str_name if "title" in kwargs else self.str_name
+        # scatter(self.ndarray_data_in_uniform[:, 0], self.ndarray_data_in_uniform[:, 1],
+        #         x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title,
+        #         x_label='measurements_x1', y_label='measurements_x2', **kwargs)
         return scatter_density(self.ndarray_data_in_uniform[:, 0], self.ndarray_data_in_uniform[:, 1],
-                               x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=self.str_name,
+                               x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title,
                                x_label='measurements_x1', y_label='measurements_x2', **kwargs)
 
     def plot_ndarray_data_in_uniform_and_simulated(self, n: int = None, **kwargs):
@@ -153,7 +166,7 @@ class Copula(metaclass=ABCMeta):
             linspace_value = np.linspace(self.pseudo_zero, 1 - self.pseudo_zero, linspace_number)
             true_output_linspace = UnivariateGaussianMixtureModel(
                 self.marginal_distribution[col_idx]).find_nearest_inverse_cdf(linspace_value)
-        return np.tile(linspace_value, tile_number), np.tile(true_output_linspace, tile_number)
+        return linspace_value.flatten(), np.array(true_output_linspace).flatten()
 
     def __cal_product_of_marginal_pdf(self, ndarray_data_like: ndarray):
         """
@@ -208,12 +221,24 @@ class Copula(metaclass=ABCMeta):
                                                                     linspace_based_on_actual,
                                                                     output_col_idx,
                                                                     ndarray_data_like.shape[0])
+        ndarray_data_like = np.expand_dims(ndarray_data_like, 1)
+        ndarray_data_like = np.repeat(ndarray_data_like, linspace_value.shape[0], axis=1)
+        if linspace_based_on_actual:
+            ndarray_data_like[:, :, output_col_idx] = true_output_linspace
+        else:
+            ndarray_data_like[:, :, output_col_idx] = linspace_value
+
+        ndarray_data_like = np.reshape(ndarray_data_like, (-1, ndarray_data_like.shape[2]))
+
         ndarray_data_like_in_uniform = self.transform_ndarray_data_like_to_uniform_by_gmm(ndarray_data_like)
-        ndarray_data_like_in_uniform = np.repeat(ndarray_data_like_in_uniform, linspace_value.size, 0)
-        ndarray_data_like_in_uniform[:, output_col_idx] = linspace_value
 
         pdf_full_pdf = self.cal_copula_pdf(ndarray_data_like_in_uniform=ndarray_data_like_in_uniform)
-        return np.stack((pdf_full_pdf, true_output_linspace), axis=1)
+        pdf_full_pdf = np.reshape(pdf_full_pdf, (-1, linspace_value.shape[0]))
+        ans = []
+        pdf_x = true_output_linspace if linspace_based_on_actual else linspace_value
+        for ans_i in pdf_full_pdf:
+            ans.append(UnivariatePDFOrCDFLike(pdf_like_ndarray=np.stack((ans_i, pdf_x), 1)))
+        return ans
 
     def cal_copula_cdf_partial_derivative(self, *, ndarray_data_like: ndarray = None,
                                           use_ndarray_data: bool = False,
@@ -307,16 +332,17 @@ class GMCM(BivariateCopula):
                  marginal_distribution: Tuple[GaussianMixture, ...] = None,
                  marginal_distribution_file_: str = None,
                  gmcm_fitting_k: int = 6, gmcm_max_fitting_iteration: int = 500, gmcm_fitting_attempt: int = 1,
+                 debug: bool = False,
                  str_name: str = None, ):
         super().__init__(ndarray_data, ndarray_data_in_uniform=ndarray_data_in_uniform,
                          marginal_distribution=marginal_distribution,
                          marginal_distribution_file_=marginal_distribution_file_,
                          str_name=str_name)
         self.gmcm_model_file_ = gmcm_model_file_
-        if not try_to_find_file(gmcm_model_file_):
-            self.__fit_gmcm_using_matlab(gmcm_fitting_k, gmcm_max_fitting_iteration, gmcm_fitting_attempt)
+        self.__fit_gmcm_using_matlab(gmcm_fitting_k, gmcm_max_fitting_iteration, gmcm_fitting_attempt, debug)
 
-    def __fit_gmcm_using_matlab(self, gmcm_fitting_k: int, gmcm_max_fitting_iteration: int, gmcm_fitting_attempt: int):
+    def __fit_gmcm_using_matlab(self, gmcm_fitting_k: int, gmcm_max_fitting_iteration: int, gmcm_fitting_attempt: int,
+                                debug: bool = False):
         """
         用MATLAB拟合GMCM，并储存数据
         :param gmcm_fitting_k: GMCM的component数量
@@ -324,44 +350,62 @@ class GMCM(BivariateCopula):
         :return:
         """
         if gmcm_fitting_attempt == 1:
-            eng = matlab.engine.start_matlab()
+            # eng = matlab.engine.start_matlab()
             eng.addpath(self.matlab_script_folder_path, nargout=0)
-            eng.estimate_gmcm_and_save(double(self.ndarray_data_in_uniform.tolist()), self.gmcm_model_file_,
-                                       gmcm_fitting_k,
-                                       gmcm_max_fitting_iteration, nargout=0)
-            eng.quit()
-        else:
-            for i in range(gmcm_fitting_attempt):
-                save_name = self.gmcm_model_file_ + str(i) if i > 0 else self.gmcm_model_file_
-                eng = matlab.engine.start_matlab()
-                eng.addpath(self.matlab_script_folder_path, nargout=0)
-                eng.estimate_gmcm_and_save(double(self.ndarray_data_in_uniform.tolist()),
-                                           save_name,
+            if not try_to_find_file(self.gmcm_model_file_):
+                eng.estimate_gmcm_and_save(double(self.ndarray_data_in_uniform.tolist()), self.gmcm_model_file_,
                                            gmcm_fitting_k,
                                            gmcm_max_fitting_iteration, nargout=0)
-                eng.quit()
+            if debug:
+                self.plot_ndarray_data_in_uniform_and_simulated(1_000_000)
+            # eng.quit()
+        else:
+            for i in range(gmcm_fitting_attempt):
+                if i > 0:
+                    renamed = self.gmcm_model_file_.split(".mat")
+                    save_name = renamed[0] + "_" + str(i) + ".mat"
+                else:
+                    save_name = self.gmcm_model_file_
+                # eng = matlab.engine.start_matlab()
+                eng.addpath(self.matlab_script_folder_path, nargout=0)
+                if not try_to_find_file(save_name):
+                    eng.estimate_gmcm_and_save(double(self.ndarray_data_in_uniform.tolist()),
+                                               save_name,
+                                               gmcm_fitting_k,
+                                               gmcm_max_fitting_iteration, nargout=0)
+                protect = self.gmcm_model_file_
+                if i > 0:
+                    save_name = self.gmcm_model_file_.split(f".mat")[0] + "_" + str(i) + ".mat"
+                    self.gmcm_model_file_ = save_name
+                if debug:
+                    if i == 0:
+                        self.plot_ndarray_data_in_uniform_and_simulated(200_000, title=f"att = {i} ")
+                    else:
+                        self.plot_simulated(200_000, title=f"att = {i} ")
+                self.gmcm_model_file_ = protect
+                # eng.quit()
 
     def __cal_gmcm_cdf_using_matlab(self, uniform_ndarray_data_like):
-        eng = matlab.engine.start_matlab()
+        # eng = matlab.engine.start_matlab()
         eng.addpath(self.matlab_script_folder_path, nargout=0)
         gmcm_cdf_value = eng.load_gmcm_and_cal_cdf(double(uniform_ndarray_data_like.tolist()),
                                                    self.gmcm_model_file_, nargout=1)
-        eng.quit()
+        # eng.quit()
         return np.asarray(gmcm_cdf_value).flatten()
 
     def __cal_gmcm_pdf_using_matlab(self, uniform_ndarray_data_like):
-        eng = matlab.engine.start_matlab()
+        # eng = matlab.engine.start_matlab()
         eng.addpath(self.matlab_script_folder_path, nargout=0)
         gmcm_pdf_value = eng.load_gmcm_and_cal_pdf(double(uniform_ndarray_data_like.tolist()),
                                                    self.gmcm_model_file_, nargout=1)
-        eng.quit()
+        # eng.quit()
         return np.asarray(gmcm_pdf_value).flatten()
 
     def __simulate_gmcm_using_matlab(self, n):
-        eng = matlab.engine.start_matlab()
+        # eng = matlab.engine.start_matlab()
         eng.addpath(self.matlab_script_folder_path, nargout=0)
         simulated = eng.load_gmcm_and_simulate(self.gmcm_model_file_, n, nargout=1)
-        eng.quit()
+        # eng.quit()
         return np.asarray(simulated)
 
     def cal_copula_pdf(self, *, ndarray_data_like: ndarray = None, ndarray_data_like_in_uniform: ndarray = None,
@@ -398,12 +442,12 @@ class GMCM(BivariateCopula):
             ndarray_data_like_in_uniform = self.ndarray_data_in_uniform
         if ndarray_data_like_in_uniform is None:
             ndarray_data_like_in_uniform = self.transform_ndarray_data_like_to_uniform_by_gmm(ndarray_data_like)
-        eng = matlab.engine.start_matlab()
+        # eng = matlab.engine.start_matlab()
         eng.addpath(self.matlab_script_folder_path, nargout=0)
         cdf_partial_derivative_value = eng.load_gmcm_and_cdf_partial_derivative(
             double(ndarray_data_like_in_uniform.tolist()),
             partial_derivative_var_idx[0] + 1, self.gmcm_model_file_, nargout=1)
-        eng.quit()
+        # eng.quit()
         result = np.asarray(cdf_partial_derivative_value).flatten()
         return self.limit_to_pseudo_zero_and_one(result)
 
@@ -560,8 +604,11 @@ class VineGMCMCopula(VineCopula):
     gmcm_model_files_for_construction: 和construction的.__len__()一样，每一个对应的位置表示那个edge的GMCM的结果
     """
 
-    def __init__(self, ndarray_data: ndarray = None, *, gmcm_model_folder_for_construction_path_: str, **kwargs):
+    def __init__(self, ndarray_data: ndarray = None, *, gmcm_model_folder_for_construction_path_: Union[Path, str],
+                 **kwargs):
         super().__init__(ndarray_data, **kwargs)
+        if isinstance(gmcm_model_folder_for_construction_path_, Path):
+            gmcm_model_folder_for_construction_path_ = gmcm_model_folder_for_construction_path_.__str__()
         self.gmcm_model_files_for_construction = self.__get_gmcm_model_files_for_construction(
             gmcm_model_folder_for_construction_path_)
 
@@ -569,10 +616,13 @@ class VineGMCMCopula(VineCopula):
         return tuple(
             [gmcm_model_folder_for_construction_path_ + '/GMCM_' + str(x) + '.mat' for x in self.construction])
 
-    def fit(self):
+    def fit(self, only_at_edge_idx: int = None, gmcm_fitting_attempt: int = 1):
         # fit模型
         initialised_pair_copula_of_each_edge = []
         for edge_idx, this_edge_gmcm in enumerate(self.gmcm_model_files_for_construction):
+            if only_at_edge_idx is not None:
+                if edge_idx > only_at_edge_idx:
+                    continue
             # 没有的话就fit并且写入ndarray_data_like_in_uniform信息
             if not try_to_find_file(this_edge_gmcm):
                 if self.resolved_construction['conditioning'][edge_idx] == ():
@@ -599,8 +649,9 @@ class VineGMCMCopula(VineCopula):
                     GMCM(gmcm_model_file_=this_edge_gmcm,
                          ndarray_data_in_uniform=self.all_vars_valid_data(np.stack((input_left, input_right), axis=1)),
                          gmcm_fitting_k=8,
-                         gmcm_max_fitting_iteration=10_000,
-                         gmcm_fitting_attempt=1,
+                         gmcm_max_fitting_iteration=50_000,
+                         gmcm_fitting_attempt=gmcm_fitting_attempt,
+                         debug=True,
                          str_name='GMCM_{}'.format(str(self.resolved_construction['conditioned'][edge_idx]) + '|' +
                                                    str(self.resolved_construction['conditioning'][edge_idx]))))
                 # 重新修正ndarray_data_in_uniform使其包含nan，size对齐输入
@@ -627,19 +678,23 @@ class VineGMCMCopula(VineCopula):
                         partial_derivative_var_idx=(right_conditioning,))
                 initialised_pair_copula_of_each_edge.append(
                     GMCM(gmcm_model_file_=this_edge_gmcm,
+                         gmcm_fitting_attempt=gmcm_fitting_attempt,
                          ndarray_data_in_uniform=np.stack((input_left, input_right), axis=1),
                          str_name='GMCM_{}'.format(str(self.resolved_construction['conditioned'][edge_idx]) + '|' +
                                                    str(self.resolved_construction['conditioning'][edge_idx]))))
-            # initialised_pair_copula_of_each_edge[-1].plot_simulated()
+            tt = 1
 
     @property
     def pair_copula_instance_of_each_edge(self):
         gmcm_models = []
         for edge_idx, this_edge_gmcm in enumerate(self.gmcm_model_files_for_construction):
-            gmcm_models.append(GMCM(gmcm_model_file_=this_edge_gmcm,
-                                    str_name='GMCM_{}'.format(
-                                        str(self.resolved_construction['conditioned'][edge_idx]) + '|' +
-                                        str(self.resolved_construction['conditioning'][edge_idx]))))
+            if try_to_find_file(this_edge_gmcm):
+                gmcm_models.append(GMCM(gmcm_model_file_=this_edge_gmcm,
+                                        str_name='GMCM_{}'.format(
+                                            str(self.resolved_construction['conditioned'][edge_idx]) + '|' +
+                                            str(self.resolved_construction['conditioning'][edge_idx]))))
+            else:
+                gmcm_models.append(None)
         return tuple(gmcm_models)
 
     def cal_copula_pdf(self, *, ndarray_data_like: ndarray = None, ndarray_data_like_in_uniform: ndarray = None,
