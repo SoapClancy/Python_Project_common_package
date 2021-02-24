@@ -12,7 +12,7 @@ from collections import OrderedDict
 import re
 import tensorflow as tf
 import tensorflow_probability as tfp
-from ConvenientDataType import IntFloatConstructedOneDimensionNdarray
+from ConvenientDataType import IntFloatConstructedOneDimensionNdarray, OneDimensionNdarray
 import edward2 as ed
 
 tfd = eval("tfp.distributions")
@@ -532,3 +532,28 @@ class UnivariateMixtureOfGaussianMixtureModel(UnivariateGaussianMixtureModel, Un
         if cal_components:
             return aggregate_pdf, weighted_individual_pdf, individual_pdf
         return aggregate_pdf
+
+
+class OneDimensionBinnedData:
+    __slots__ = ("data", "bin")
+
+    def __init__(self, data: OneDimensionNdarray,
+                 *, bin_step: float,
+                 first_bin_left_boundary: float = None,
+                 last_bin_left_boundary: float = None, ):
+        from BivariateAnalysis_Class import MethodOfBins
+
+        self.data = OneDimensionNdarray(data)
+        if first_bin_left_boundary is None:
+            first_bin_left_boundary = np.nanmin(data) - bin_step / 2
+        if last_bin_left_boundary is None:
+            last_bin_left_boundary = np.nanmax(data) - bin_step / 2
+        self.bin = MethodOfBins.cal_array_of_bin_boundary(first_bin_left_boundary, last_bin_left_boundary, bin_step)
+
+    def __call__(self, query_key: float) -> ndarray:
+        """
+        This function return which bin the given query_key locate in
+        """
+        larger_or_eq_mask = query_key >= self.bin[:, 0]
+        smaller_mask = query_key < self.bin[:, 2]
+        return self.bin[np.bitwise_and(larger_or_eq_mask, smaller_mask)][0]
