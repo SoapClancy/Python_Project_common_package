@@ -34,7 +34,7 @@ class CircularToLinear:
         self.period = period
 
     def transform(self, x: Union[ndarray, int, float]):
-        warnings.warn("Note that x should be in original unit", UserWarning)
+        # warnings.warn("Note that x should be in original unit", UserWarning)
         return {'cos': np.cos(math.tau * x / self.period),
                 'sin': np.sin(math.tau * x / self.period)}
 

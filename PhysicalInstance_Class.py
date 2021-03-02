@@ -43,7 +43,7 @@ class PhysicalInstance:
 
         new_instance = self.__class__(
             *args,
-            obj_name=self.obj_name,
+            obj_name=''.join([self.obj_name, '_init_from_self']),
             predictor_names=self.predictor_names,
             dependant_names=self.dependant_names,
             **kwargs)
