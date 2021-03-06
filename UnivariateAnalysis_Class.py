@@ -10,14 +10,8 @@ from abc import ABCMeta, abstractmethod
 from scipy.interpolate import interp1d
 from collections import OrderedDict
 import re
-import tensorflow as tf
-import tensorflow_probability as tfp
-from ConvenientDataType import IntFloatConstructedOneDimensionNdarray, OneDimensionNdarray
-import edward2 as ed
 
-tfd = eval("tfp.distributions")
-tfpl = eval("tfp.layers")
-tfb = eval("tfp.bijectors")
+from ConvenientDataType import IntFloatConstructedOneDimensionNdarray, OneDimensionNdarray
 
 
 class Univariate:
@@ -64,7 +58,7 @@ class Univariate:
         else:
             return np.array([find_nearest_inverse_ecdf_one(x) for x in ecdf_value])
 
-    def fit_using_gaussian_mixture_model(self, max_mixture_number: int = 15, **gmm_args):
+    def fit_using_gaussian_mixture_model(self, max_mixture_number: int = 60, **gmm_args):
         if self.univariate_data.size <= 3:
             return None
         fitting_data = self.univariate_data.reshape(-1, 1)
@@ -80,7 +74,8 @@ class Univariate:
                     warnings.filterwarnings('error')
                     try:
                         gmm.fit(fitting_data)
-                        bic.append(gmm.bic(fitting_data))
+                        bic.append(-np.mean(gmm.score_samples(fitting_data)))
+                        # bic.append(gmm.bic(fitting_data))
                     except Warning:
                         bic.append(np.inf)
             else:
@@ -264,7 +259,11 @@ class UnivariatePDFOrCDFLike(UnivariateProbabilisticModel):
         return float(np.nansum(self.pmf_like_ndarray[:, 0] * self.pmf_like_ndarray[:, 1]))
 
     def sample(self, number_of_samples: int) -> ndarray:
-        pass
+        rnd = np.random.uniform(0., 1., number_of_samples)
+        ans = interp1d(self.cdf_like_ndarray[:, 0], self.cdf_like_ndarray[:, 1],
+                       bounds_error=False,
+                       fill_value=(np.min(self.cdf_like_ndarray[:, 1]), np.max(self.cdf_like_ndarray[:, 1])))(rnd)
+        return ans
 
     def pdf_estimate(self, x: ndarray, **kwargs) -> ndarray:
         pass
@@ -275,7 +274,7 @@ class UnivariatePDFOrCDFLike(UnivariateProbabilisticModel):
     def cal_inverse_cdf_as_look_up_table(self, accuracy: float = 0.01) -> ndarray:
         pass
 
-    def find_nearest_inverse_cdf(self, cdf_value: Union[float, ndarray]) -> ndarray:
+    def find_nearest_inverse_cdf(self, cdf_value: Union[float, ndarray, list]) -> ndarray:
         inverse_cdf = []
         if isinstance(cdf_value, float):
             cdf_value = np.array([cdf_value])
@@ -406,12 +405,18 @@ class UnivariateGaussianMixtureModel(UnivariateProbabilisticModel):
         return 'GMM with {} component(s), and weights = {}'.format(self.gmm.n_components,
                                                                    self.gmm.weights_)
 
-    @property
-    def view_as_tfp_distribution(self) -> tfd.MixtureSameFamily:
+    def view_as_tfp_distribution(self):
         """
         leverage TensorFlowProbability for further calculation
         :return:
         """
+        import tensorflow as tf
+        import tensorflow_probability as tfp
+
+        tfd = eval("tfp.distributions")
+        tfpl = eval("tfp.layers")
+        tfb = eval("tfp.bijectors")
+
         tfp_distribution = tfd.MixtureSameFamily(
             mixture_distribution=tfd.Categorical(
                 probs=self.gmm.weights_.astype(np.float32)),
@@ -459,7 +464,8 @@ class UnivariateGaussianMixtureModel(UnivariateProbabilisticModel):
         return pdf_value
 
     def cdf_estimate(self, x: ndarray):
-        return self.view_as_tfp_distribution.cdf(x.astype(np.float32)).numpy()
+        # return self.view_as_tfp_distribution().cdf(x.astype(np.float32)).numpy()
+        return self.cdf_estimate_by_sampling_method(x=x)
 
     def cal_inverse_cdf_as_look_up_table(self, accuracy: float = 0.01) -> ndarray:
         return self.cal_inverse_cdf_as_look_up_table_by_sampling_method()

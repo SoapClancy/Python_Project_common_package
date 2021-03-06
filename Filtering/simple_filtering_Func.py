@@ -32,6 +32,16 @@ def interquartile_outlier(x: ndarray):
     return np.bitwise_or(x < lower, x > upper)
 
 
+def percentile_outlier(x: ndarray, low_pct, high_pct):
+    """
+    只适用于1维ndarray的快速percentile_outlier outlier判别方法
+    :return: 布尔数组，True表示outlier
+    """
+    lower = np.nanpercentile(x, low_pct)
+    upper = np.nanpercentile(x, high_pct)
+    return np.bitwise_or(x < lower, x > upper)
+
+
 def shut_down_outlier(*, predictor_var: ndarray, dependent_var: ndarray,
                       cannot_be_zero_predictor_var_range: Tuple[float, float],
                       zero_upper_tolerance: float = float_eps,

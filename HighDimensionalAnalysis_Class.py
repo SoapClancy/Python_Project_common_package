@@ -13,7 +13,6 @@ from Ploting.fast_plot_Func import *
 from sklearn.mixture import BayesianGaussianMixture, GaussianMixture
 import scipy
 from Data_Preprocessing.float_precision_control_Func import float_eps
-import tensorflow_addons as tfa
 import re
 
 
@@ -250,7 +249,7 @@ class MixtureTruncatedNormal(MixtureSameFamilyWrapper):
                 low=kwargs['low'],
                 high=kwargs['high']
             ),
-            name=f'learnable_TruncatedNormal_obj'
+            name=f'learnable_MixtureTruncatedNormal_obj'
         )
         return dist_trainable
 
@@ -340,7 +339,6 @@ class MixtureVonMises(MixtureSameFamilyWrapper):
             ),
             components_distribution=tfd.VonMises(
                 loc=tf.Variable(initial_guess['means'].flatten()),
-
                 concentration=tfp_util.TransformedVariable(1 / initial_guess['covariances'].flatten(),
                                                            bijector=tfb.Softplus())
             ),

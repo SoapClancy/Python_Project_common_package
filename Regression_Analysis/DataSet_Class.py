@@ -7,7 +7,7 @@ import tensorflow as tf
 from File_Management.path_and_file_management_Func import *
 from File_Management.load_save_Func import *
 from functools import reduce
-from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler, QuantileTransformer
 from Data_Preprocessing.TruncatedOrCircularToLinear_Class import CircularToLinear
 from itertools import chain
 import warnings
@@ -23,6 +23,7 @@ class DeepLearningDataSet:
                  cos_sin_transformed_col: Tuple[str, ...] = (),
                  min_max_transformed_col: Tuple[str, ...] = (),
                  standard_transformed_col: Tuple[str, ...] = (),
+                 quantile_transformed_col: Tuple[str, ...] = (),
                  one_hot_transformed_col: Tuple[str, ...] = (),
                  non_transformed_col: Tuple[str, ...] = (),
                  predictor_cols: Tuple[str, ...] = (),
@@ -39,6 +40,7 @@ class DeepLearningDataSet:
             'cos_sin_transformed_col': cos_sin_transformed_col,
             'min_max_transformed_col': min_max_transformed_col,
             'standard_transformed_col': standard_transformed_col,
+            'quantile_transformed_col': quantile_transformed_col,
             'one_hot_transformed_col': one_hot_transformed_col,
             'non_transformed_col': non_transformed_col
         }
@@ -93,6 +95,14 @@ class DeepLearningDataSet:
                 for this_col in self.transformed_cols_meta['standard_transformed_col']:
                     _new_multi_index_columns[this_col] = [(this_col, 'standard')]
 
+            # %% quantile_transformed_col
+            if self.transformed_cols_meta['quantile_transformed_col'] != ():
+                quantile_scaler = QuantileTransformer(n_quantiles=10000, output_distribution='normal')
+                quantile_scaler.fit(self.data[list(self.transformed_cols_meta['quantile_transformed_col'])].values)
+                _transformed_cols_args['quantile_transformed_col'] = quantile_scaler
+                for this_col in self.transformed_cols_meta['quantile_transformed_col']:
+                    _new_multi_index_columns[this_col] = [(this_col, 'quantile')]
+
             # %% cos_sin_transformed_col
             cos_sin_transformed_col_args = {key: None for key in self.transformed_cols_meta['cos_sin_transformed_col']}
             for this_col in self.transformed_cols_meta['cos_sin_transformed_col']:
@@ -106,7 +116,9 @@ class DeepLearningDataSet:
             # %% one_hot_transformed_col
             if self.transformed_cols_meta['one_hot_transformed_col'] != ():
                 one_hot_encoder = OneHotEncoder(handle_unknown='ignore')
-                one_hot_encoder.fit(self.data[list(self.transformed_cols_meta['one_hot_transformed_col'])].values)
+                to_fit = self.data[list(self.transformed_cols_meta['one_hot_transformed_col'])].values
+                to_fit = to_fit[np.all(~np.isnan(to_fit), axis=1), :].astype(int)
+                one_hot_encoder.fit(to_fit)
                 for i, this_col in enumerate(self.transformed_cols_meta['one_hot_transformed_col']):
                     _new_multi_index_columns[this_col] = [(this_col, f'one_hot_{x}') for x in
                                                           one_hot_encoder.categories_[i]]
@@ -127,7 +139,7 @@ class DeepLearningDataSet:
             dtype=float
         )
         # %% min_max_transformed_col and standard_transformed_col
-        for _ in ('min_max_transformed_col', 'standard_transformed_col'):
+        for _ in ('min_max_transformed_col', 'standard_transformed_col', 'quantile_transformed_col'):
             if self.transformed_cols_meta[_] != ():
                 _index = list(self.transformed_cols_meta[_])
                 trans = transformed_cols_args[_].transform(self.data[_index])
@@ -137,8 +149,11 @@ class DeepLearningDataSet:
         if self.transformed_cols_meta['one_hot_transformed_col'] != ():
             _ = 'one_hot_transformed_col'
             _index = list(self.transformed_cols_meta[_])
-            trans = transformed_cols_args[_].transform(self.data[_index])
-            transformed_data.loc[:, _index] = trans.toarray().astype(int)
+            to_trans = self.data[_index].values
+            all_ok_mask = np.all(~np.isnan(to_trans), axis=1)
+            to_trans = to_trans[all_ok_mask, :].astype(int)
+            trans = transformed_cols_args[_].transform(to_trans)
+            transformed_data.loc[all_ok_mask, _index] = trans.toarray().astype(int)
 
         # %% cos_sin_transformed_col
         _index = list(self.transformed_cols_meta['cos_sin_transformed_col'])
@@ -155,25 +170,48 @@ class DeepLearningDataSet:
         transformed_data.loc[:, _index] = self.data[list(self.transformed_cols_meta['non_transformed_col'])].values
         return transformed_data
 
-    def inverse_transform(self, data_ndarray: ndarray, names: Sequence):
-        assert (data_ndarray.ndim == 3) and (data_ndarray.shape[2] == len(names))
+    def inverse_transform(self, data_ndarray: ndarray, names: Sequence[Sequence]):
+        assert data_ndarray.ndim == 3 and names.__len__() == data_ndarray.shape[2]
         transformed_cols_args, new_multi_index_columns = load_pkl_file(self._transformation_args_file_path)
-        data_ndarray_inverse_transformed = np.full(data_ndarray.shape, np.nan)
-        for i, this_name in enumerate(names):
-            if ("cos" in this_name) or ("sin" in this_name) or ("one_hot" in this_name):
-                raise NotImplemented
-            elif "min_max" in this_name or "standard" in this_name:
-                if "min_max" in this_name:
-                    index = self.transformed_cols_meta['min_max_transformed_col'].index(this_name[0])
-                    scaler_obj = transformed_cols_args['min_max_transformed_col']
-                else:
-                    index = self.transformed_cols_meta['standard_transformed_col'].index(this_name[0])
-                    scaler_obj = transformed_cols_args['standard_transformed_col']
+        data_ndarray_inverse_transformed = np.full((*data_ndarray.shape[:-1], len({x[0] for x in names})), np.nan)
+
+        names_ordered_set = list()
+        set_obj = set()
+        for name in names:
+            if name not in set_obj:
+                names_ordered_set.append(name)
+                set_obj.add(name)
+
+        for i, this_name in enumerate(names_ordered_set):
+            if ("cos" in this_name) or ("sin" in this_name):
+                raise NotImplementedError
+
+            if "min_max" in this_name:
+                index = self.transformed_cols_meta['min_max_transformed_col'].index(this_name[0])
+                scaler_obj = transformed_cols_args['min_max_transformed_col']
+            elif "standard" in this_name:
+                index = self.transformed_cols_meta['standard_transformed_col'].index(this_name[0])
+                scaler_obj = transformed_cols_args['standard_transformed_col']
+            elif "quantile" in this_name:
+                index = self.transformed_cols_meta['quantile_transformed_col'].index(this_name[0])
+                scaler_obj = transformed_cols_args['quantile_transformed_col']
+            elif "one_hot" in this_name:
+                index = self.transformed_cols_meta['one_hot_transformed_col'].index(this_name[0])
+                scaler_obj = transformed_cols_args['one_hot_transformed_col']
+            else:
+                raise NotImplementedError
+
+            if "one_hot" in this_name:
+                for j in range(data_ndarray.shape[0]):
+                    data_ndarray_inverse_transformed[j, :, i] = scaler_obj.inverse_transform(
+                        data_ndarray[j, :, :][:, [idx for idx, x in enumerate(names) if x == this_name]]
+                    ).astype(int)
+            else:
                 poxy_ndarray = np.full((data_ndarray.shape[1], scaler_obj.n_features_in_), np.nan)
                 for j in range(data_ndarray.shape[0]):
                     poxy_ndarray[:, index] = data_ndarray[j, :, i]
-                    data_ndarray_inverse_transformed[j, :, i] = scaler_obj.inverse_transform(
-                        poxy_ndarray)[:, index]
+                    data_ndarray_inverse_transformed[j, :, i] = scaler_obj.inverse_transform(poxy_ndarray)[:, index]
+
         return data_ndarray_inverse_transformed
 
     def _stacked_shift(self, stacked_shift_col, stacked_shift_size, how_many_stacked):

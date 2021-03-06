@@ -22,7 +22,7 @@ from pathlib import Path
 
 THREE_DIM_CVINE_CONSTRUCTION = ((1, 2), (1, 3), (2, 3, 1))
 FOUR_DIM_CVINE_CONSTRUCTION = ((1, 2), (1, 3), (1, 4), (2, 3, 1), (2, 4, 1), (3, 4, 1, 2))
-# eng = matlab.engine.start_matlab()
+eng = matlab.engine.start_matlab()
 
 
 class Copula(metaclass=ABCMeta):
@@ -64,8 +64,8 @@ class Copula(metaclass=ABCMeta):
         x_label = kwargs.pop('x_label') if 'x_label' in kwargs else 'sim_x1'
         y_label = kwargs.pop('y_label') if 'y_label' in kwargs else 'sim_x2'
         title = kwargs.pop('title') + self.str_name if 'title' in kwargs else self.str_name
-        # scatter(sim[:, 0], sim[:, 1], x_label=x_label, y_label=y_label,
-        #         x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title, **kwargs)
+        scatter(sim[:, 0], sim[:, 1], x_label=x_label, y_label=y_label,
+                x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title, **kwargs)
         truncated_density_length = n
         if self.ndarray_data_in_uniform is not None:
             if n > self.ndarray_data_in_uniform.shape[0] * 10:
@@ -80,9 +80,9 @@ class Copula(metaclass=ABCMeta):
         只支持2维
         """
         title = kwargs.pop("title") + self.str_name if "title" in kwargs else self.str_name
-        # scatter(self.ndarray_data_in_uniform[:, 0], self.ndarray_data_in_uniform[:, 1],
-        #         x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title,
-        #         x_label='measurements_x1', y_label='measurements_x2', **kwargs)
+        scatter(self.ndarray_data_in_uniform[:, 0], self.ndarray_data_in_uniform[:, 1],
+                x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title,
+                x_label='measurements_x1', y_label='measurements_x2', **kwargs)
         return scatter_density(self.ndarray_data_in_uniform[:, 0], self.ndarray_data_in_uniform[:, 1],
                                x_lim=(-0.02, 1.02), y_lim=(-0.02, 1.02), title=title,
                                x_label='measurements_x1', y_label='measurements_x2', **kwargs)
@@ -90,8 +90,8 @@ class Copula(metaclass=ABCMeta):
     def plot_ndarray_data_in_uniform_and_simulated(self, n: int = None, **kwargs):
         if n is None:
             n = int(self.ndarray_data_in_uniform.shape[0] * 1.2)
-        self.plot_simulated(n=n, **kwargs)
-        return self.plot_ndarray_data_in_uniform(**kwargs)
+        self.plot_ndarray_data_in_uniform(**kwargs)
+        return self.plot_simulated(n=n, **kwargs)
 
     def __transform_ndarray_data_to_uniform_by_gmm(self):
         """
@@ -331,7 +331,7 @@ class GMCM(BivariateCopula):
                  ndarray_data_in_uniform: ndarray = None,
                  marginal_distribution: Tuple[GaussianMixture, ...] = None,
                  marginal_distribution_file_: str = None,
-                 gmcm_fitting_k: int = 6, gmcm_max_fitting_iteration: int = 500, gmcm_fitting_attempt: int = 1,
+                 gmcm_fitting_k: int = 8, gmcm_max_fitting_iteration: int = 500, gmcm_fitting_attempt: int = 1,
                  debug: bool = False,
                  str_name: str = None, ):
         super().__init__(ndarray_data, ndarray_data_in_uniform=ndarray_data_in_uniform,
@@ -379,9 +379,9 @@ class GMCM(BivariateCopula):
                     self.gmcm_model_file_ = save_name
                 if debug:
                     if i == 0:
-                        self.plot_ndarray_data_in_uniform_and_simulated(200_000, title=f"att = {i} ")
+                        self.plot_ndarray_data_in_uniform_and_simulated(200_000, title=f"attempt = {i} ")
                     else:
-                        self.plot_simulated(200_000, title=f"att = {i} ")
+                        self.plot_simulated(200_000, title=f"attempt = {i} ")
                 self.gmcm_model_file_ = protect
                 # eng.quit()
 
@@ -682,7 +682,6 @@ class VineGMCMCopula(VineCopula):
                          ndarray_data_in_uniform=np.stack((input_left, input_right), axis=1),
                          str_name='GMCM_{}'.format(str(self.resolved_construction['conditioned'][edge_idx]) + '|' +
                                                    str(self.resolved_construction['conditioning'][edge_idx]))))
-            tt = 1
 
     @property
     def pair_copula_instance_of_each_edge(self):

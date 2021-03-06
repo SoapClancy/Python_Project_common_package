@@ -59,6 +59,21 @@ def series(x: Union[range, ndarray, Sequence], y: Union[range, ndarray, Sequence
 
 
 @show_fig
+def step(x: Union[range, ndarray, Sequence], y: Union[range, ndarray, Sequence] = None,
+         ax=None, figure_size=(5, 5 * 0.618), **kwargs):
+    @creat_fig(figure_size, ax)
+    def plot(_ax):
+        nonlocal y
+        if y is None:
+            y = np.arange(0, len(x))
+            return _ax.step(y, x, **kwargs)
+        else:
+            return _ax.step(x, y, **kwargs)
+
+    return plot
+
+
+@show_fig
 def stem(x: Union[range, ndarray], y: ndarray = None, ax=None, figure_size=(5, 5 * 0.618), color='b', **kwargs):
     @creat_fig(figure_size, ax)
     def plot(_ax):

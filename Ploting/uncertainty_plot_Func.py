@@ -40,6 +40,10 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
                                          ax=None, *,
                                          show_coverage_labels: StrOneDimensionNdarray = (),
                                          automatic_alpha_control: bool = False,
+                                         plot_mean: bool = False,
+                                         plot_median: bool = False,
+                                         edgecolor='none',
+                                         facecolor_shift_factor: Union[int, float] = -0,
                                          **kwargs):
     """
     :param x: x-axis values
@@ -53,10 +57,14 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
     which is ax, and ax will be passed as an argument, and it is desired that plot_from_uncertainty_like_dataframe could
     provide variable alpha values for the fill_between for each pair of percentiles so that the scatters may have a
     constant visibility level.
+    :param plot_mean
+    :param plot_median:
+    :param edgecolor
+    :param facecolor_shift_factor
     :return:
     """
 
-    @creat_fig((5, 5 * 0.618), ax)
+    @creat_fig(kwargs.pop('figure_size') if 'figure_size' in kwargs else (5, 5 * 0.618), ax)
     def plot(_ax):
         nonlocal uncertainty_like_dataframe
         # type checking
@@ -66,15 +74,15 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
         higher_half_percentiles = uncertainty_like_dataframe.infer_higher_half_percentiles(lower_half_percentiles)
         # Get colour code
         cmap = cm.get_cmap(kwargs.pop('cmap_name') if 'cmap_name' in kwargs else 'bone')  # 'copper', 'jet', 'cool'
-        norm = colors.Normalize(vmin=0, vmax=int(lower_half_percentiles.size))
+        norm = colors.Normalize(vmin=0 + facecolor_shift_factor, vmax=int(lower_half_percentiles.size))
         # For each pair of percentiles, add new plotting layer
         for i in range(lower_half_percentiles.size):
             this_lower_half_percentile = lower_half_percentiles[i]
             this_higher_half_percentile = higher_half_percentiles[i]
             # Prepare for label-adding, according to the requirements (i.e., 'show_coverage_labels')
             if lower_half_percentiles[i] in show_coverage_labels:
-                this_coverage_label = ' '.join((f"{100 - 2 * float(this_lower_half_percentile):.0f}",
-                                                '%'))
+                this_coverage_label = ''.join((f"{100 - 2 * float(this_lower_half_percentile):.0f}",
+                                               '%'))
             else:
                 this_coverage_label = None
             # If automatic_alpha_control is desired to infer the alpha value
@@ -87,17 +95,19 @@ def plot_from_uncertainty_like_dataframe(x: ndarray,
                              uncertainty_like_dataframe(by_percentile=this_lower_half_percentile),
                              uncertainty_like_dataframe(by_percentile=this_higher_half_percentile),
                              facecolor=kwargs.pop('facecolor') if 'facecolor' in kwargs else cmap(1 - norm(i)),
-                             edgecolor='k',
+                             edgecolor=edgecolor,
                              linewidth=0.25,
                              label=this_coverage_label,
                              alpha=alpha,
                              **kwargs
                              )
         # Add new plotting layer for mean value
-        _ax = series(x, uncertainty_like_dataframe.iloc[-2].values,
-                     color='fuchsia', linestyle='--', ax=_ax, label='Mean')
-        _ax = series(x, uncertainty_like_dataframe(by_percentile=50),
-                     color='orange', linestyle='-', ax=_ax, label='Median')
+        if plot_mean:
+            _ax = series(x, uncertainty_like_dataframe.iloc[-2].values,
+                         color='fuchsia', linestyle='--', ax=_ax, label='Mean')
+        if plot_median:
+            _ax = series(x, uncertainty_like_dataframe(by_percentile=50),
+                         color='orange', linestyle='-', ax=_ax, label='Median')
         return _ax
 
     return plot

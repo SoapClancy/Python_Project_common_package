@@ -5,6 +5,7 @@ import tensorflow as tf
 from Ploting.fast_plot_Func import *
 import tensorflow_probability as tfp
 import edward2 as ed
+from abc import abstractmethod, ABCMeta
 
 tfd = eval("tfp.distributions")
 tfpl = eval("tfp.layers")
@@ -12,13 +13,12 @@ tfpl = eval("tfp.layers")
 tf.keras.backend.set_floatx('float32')
 
 
-class BayesianConv1DBiLSTM:
+class BayesianConv1DBiLSTM(metaclass=ABCMeta):
     __slots__ = ("input_shape", "output_shape", "batch_size",
                  "conv1d_hypers", "conv1d_layer_count", "use_encoder_decoder",
                  "maxpool1d_hypers",
                  "bilstm_hypers", "bilstm_layer_count",
-                 "dense_hypers",
-                 "dist_hypers")
+                 "dense_hypers")
 
     def __init__(self, *,
                  input_shape: Sequence,
@@ -27,6 +27,7 @@ class BayesianConv1DBiLSTM:
                  conv1d_layer_count: int = 1,
                  bilstm_layer_count: int = 1,
                  use_encoder_decoder: bool,
+                 dense_hypers_units: int,
                  **kwargs):
         self.input_shape = input_shape
         self.output_shape = output_shape
@@ -65,18 +66,9 @@ class BayesianConv1DBiLSTM:
             "units": kwargs.get("bilstm_hypers_units", 32),
         }
 
-        # %% Distribution layer parameters and their default values
-
-        self.dist_hypers = {
-            "num_components": kwargs.get("dist_hypers_num_components", 3),
-        }
-
         # %% Bayesian Dense hyper parameters and their default values
         self.dense_hypers = {
-            "units": tfpl.MixtureSameFamily.params_size(
-                num_components=self.dist_hypers["num_components"],
-                component_params_size=tfpl.MultivariateNormalTriL.params_size(self.output_shape[1])
-            ),
+            "units": dense_hypers_units,
             "make_prior_fn": kwargs.get("dense_hypers_make_prior_fn", self.get_dense_make_prior_fn()),
             "make_posterior_fn": kwargs.get("dense_hypers_make_posterior_fn", self.get_dense_make_posterior_fn()),
             "kl_weight": kwargs.get("dense_hypers_kl_weight", self.kl_weight),
@@ -196,6 +188,7 @@ class BayesianConv1DBiLSTM:
         dense_layer = eval(f"tfpl.DenseVariational({args_source_code})")
         return dense_layer
 
+    @abstractmethod
     def get_distribution_layer(self, dtype=tf.float32):
         # dist_layer = tfpl.DistributionLambda(
         #     make_distribution_fn=lambda t: tfd.Independent(
@@ -211,9 +204,9 @@ class BayesianConv1DBiLSTM:
         #     convert_to_tensor_fn=lambda s: s.sample()
         # )
 
-        dist_layer = tfpl.MixtureSameFamily(num_components=self.dist_hypers["num_components"],
-                                            component_layer=tfpl.MultivariateNormalTriL(self.output_shape[1]),
-                                            convert_to_tensor_fn=tfd.Distribution.sample)
+        # dist_layer = tfpl.MixtureSameFamily(num_components=self.dist_hypers["num_components"],
+        #                                     component_layer=tfpl.MultivariateNormalTriL(self.output_shape[1]),
+        #                                     convert_to_tensor_fn=tfd.Distribution.sample)
 
         # dist_layer = tfpl.IndependentNormal(event_shape=self.output_shape,
         #                                     convert_to_tensor_fn=tfd.Distribution.sample)
@@ -221,7 +214,8 @@ class BayesianConv1DBiLSTM:
         # dist_layer = tfpl.MultivariateNormalTriL(self.output_shape[0] * self.output_shape[1])
         # dist_layer = tfpl.MixtureNormal(num_components=self.dist_hypers["num_components"],
         #                                 event_shape=self.output_shape)
-        return dist_layer
+        # return dist_layer
+        pass
 
 
 class StackedBiLSTM(torch.nn.Module):

@@ -28,10 +28,12 @@ class TruncatedToLinear:
 
 
 class CircularToLinear:
-    __slots__ = ('period',)
+    __slots__ = ('period', 'lower_boundary', 'upper_boundary')
 
-    def __init__(self, period: Union[float, int]):
+    def __init__(self, period: Union[float, int], lower_boundary, upper_boundary):
         self.period = period
+        self.lower_boundary = lower_boundary
+        self.upper_boundary = upper_boundary
 
     def transform(self, x: Union[ndarray, int, float]):
         # warnings.warn("Note that x should be in original unit", UserWarning)
@@ -47,7 +49,6 @@ class CircularToLinear:
 
     def __call__(self, x: ndarray):
         return self.transform(x)
-
 
 # if __name__ == "__main__":
 #     # Test

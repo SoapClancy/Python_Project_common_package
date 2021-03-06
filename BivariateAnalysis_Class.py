@@ -1,4 +1,5 @@
-from Filtering.simple_filtering_Func import interquartile_outlier, shut_down_outlier
+from Filtering.simple_filtering_Func import interquartile_outlier, shut_down_outlier, percentile_outlier, \
+    percentile_outlier
 from Data_Preprocessing.float_precision_control_Func import get_decimal_places_of_float, \
     convert_ndarray_to_arbitrary_precision
 from Ploting.fast_plot_Func import *
@@ -104,6 +105,16 @@ class MethodOfBins:
             if this_bin['this_bin_frequency'] == 0:
                 continue
             outlier_bool_idx_in_this_bin = interquartile_outlier(this_bin['dependent_var_in_this_bin'])
+            outlier_idx = this_bin['this_bin_var_idx'][outlier_bool_idx_in_this_bin]
+            outlier[outlier_idx] = True
+        return outlier
+
+    def identify_percentile_outlier(self, low_pct, high_pct):
+        outlier = np.full(self.predictor_var.shape, False)
+        for this_bin in self.mob.values():
+            if this_bin['this_bin_frequency'] == 0:
+                continue
+            outlier_bool_idx_in_this_bin = percentile_outlier(this_bin['dependent_var_in_this_bin'], low_pct, high_pct)
             outlier_idx = this_bin['this_bin_var_idx'][outlier_bool_idx_in_this_bin]
             outlier[outlier_idx] = True
         return outlier
