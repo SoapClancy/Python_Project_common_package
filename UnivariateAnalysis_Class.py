@@ -269,7 +269,10 @@ class UnivariatePDFOrCDFLike(UnivariateProbabilisticModel):
         pass
 
     def cdf_estimate(self, x: ndarray) -> ndarray:
-        pass
+        obj = interp1d(self.cdf_like_ndarray[:, 1], self.cdf_like_ndarray[:, 0],
+                       bounds_error=False,
+                       fill_value=(np.min(self.cdf_like_ndarray[:, 0]), np.max(self.cdf_like_ndarray[:, 0])))
+        return obj(x)
 
     def cal_inverse_cdf_as_look_up_table(self, accuracy: float = 0.01) -> ndarray:
         pass

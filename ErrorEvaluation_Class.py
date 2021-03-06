@@ -1,18 +1,18 @@
 from Data_Preprocessing import float_eps
 import warnings
 from Ploting.fast_plot_Func import *
+from typing import Callable
 
 
 class ErrorEvaluation:
-    def __init__(self, *, target: ndarray, model_output: ndarray, **kwargs):
+    def __init__(self, *, target: Sequence, model_output: Sequence, **kwargs):
+        assert target.__len__() == model_output.__len__()
+
         self.target = target
         self.model_output = model_output
 
 
 class DeterministicError(ErrorEvaluation):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def cal_error(self, error_name: str) -> float:
         if error_name == 'mean_absolute_error':
             error = self.cal_mean_absolute_error()
@@ -99,13 +99,91 @@ class EnergyBasedError(ErrorEvaluation):
 
 
 class ProbabilisticError(ErrorEvaluation):
-    pass
+    monte_carlo_sample_size: int = 100_000
+    np.random.seed(0)
+
+    def cal_continuous_ranked_probability_score(self, integral_boundary: Sequence[Union[int, float]]) -> ndarray:
+        # ref: https://www.lokad.com/continuous-ranked-probability-score#Numerical_evaluation_4
+        # The elements of model_output should be Callable instance, which is the predicted CDF (given x, should
+        # return its corresponding CDF value)
+        assert isinstance(self.model_output[0], Callable)
+
+        def cal_crps_for_single_sample(actual_val, predicted_cdf):
+            nonlocal integral_boundary
+
+            part_1 = np.mean(predicted_cdf(np.random.uniform(integral_boundary[0],
+                                                             actual_val,
+                                                             self.monte_carlo_sample_size)) ** 2)
+            part_2 = np.mean((predicted_cdf(np.random.uniform(actual_val,
+                                                              integral_boundary[1],
+                                                              self.monte_carlo_sample_size)) - 1) ** 2)
+            return part_1 + part_2
+
+        crps_ans = np.full(self.target.__len__(), np.nan)
+        for i in range(len(crps_ans)):
+            if self.model_output[i] is not None:
+                now_crps = cal_crps_for_single_sample(self.target[i], self.model_output[i])
+                crps_ans[i] = now_crps
+
+        return crps_ans
+
+    def cal_pinball_loss(self, quantiles_to_assess: ndarray = None) -> ndarray:
+        # ref: https://www.lokad.com/pinball-loss-function-definition
+        quantiles = quantiles_to_assess or np.arange(0.001, 1., 0.001)
+        # The elements of model_output should be Callable instance, which is the predicted CDF (given x, should
+        # return its corresponding CDF value)
+        assert isinstance(self.model_output[0], Callable)
+
+        def cal_pinball_loss_for_single_sample(actual_val, predicted_cdf):
+            nonlocal quantiles
+
+            one_ans = np.full(quantiles.__len__(), np.nan)
+
+            forecasted = predicted_cdf(quantiles)
+
+            mask_act_gte = actual_val >= forecasted
+            one_ans[mask_act_gte] = (actual_val - forecasted[mask_act_gte]) * quantiles[mask_act_gte]
+            one_ans[~mask_act_gte] = (forecasted[~mask_act_gte] - actual_val) * (1 - quantiles[~mask_act_gte])
+
+            return np.mean(one_ans)
+
+        pinball_loss_ans = np.full(self.target.__len__(), np.nan)
+        for i in range(len(pinball_loss_ans)):
+            if self.model_output[i] is not None:
+                now_pinball_loss = cal_pinball_loss_for_single_sample(self.target[i], self.model_output[i])
+                pinball_loss_ans[i] = now_pinball_loss
+
+        return pinball_loss_ans
+
+    def cal_winker_score(self, alpha_val: Union[int, float]) -> ndarray:
+        # ref: https://otexts.com/fpp3/distaccuracy.html
+        # The elements of model_output should be Callable instance, which is the predicted CDF (given x, should
+        # return its corresponding CDF value)
+        assert isinstance(self.model_output[0], Callable)
+
+        def cal_winker_score_for_single_sample(actual_val, predicted_cdf):
+            nonlocal alpha_val
+            cdf_lower_alpha, cdf_upper_alpha = predicted_cdf([0.5 * alpha_val, 1. - 0.5 * alpha_val])
+            assert cdf_upper_alpha >= cdf_lower_alpha
+            interval_length = cdf_upper_alpha - cdf_lower_alpha
+
+            if actual_val < cdf_lower_alpha:
+                return interval_length + 2 / alpha_val * (cdf_lower_alpha - actual_val)
+            elif actual_val <= cdf_upper_alpha:
+                return interval_length
+            else:
+                return interval_length + 2 / alpha_val * (actual_val - cdf_upper_alpha)
+
+        winker_score_ans = np.full(self.target.__len__(), np.nan)
+        for i in range(len(winker_score_ans)):
+            if self.model_output[i] is not None:
+                now_winker_score = cal_winker_score_for_single_sample(self.target[i], self.model_output[i])
+                winker_score_ans[i] = now_winker_score
+
+        return winker_score_ans
 
 
 class ProbabilisticErrorIETPaperMethod(ProbabilisticError):
-
-    def __init__(self, *, target: ndarray, model_output: ndarray, **kwargs):
-        super().__init__(target=target, model_output=model_output)
 
     def do_calculation(self):
         def cal_one_epsilon(ref, model):
