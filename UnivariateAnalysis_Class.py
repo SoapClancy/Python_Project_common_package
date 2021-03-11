@@ -254,6 +254,15 @@ class UnivariatePDFOrCDFLike(UnivariateProbabilisticModel):
             pmf = self.__cal_bin_height_in_terms_of_cdf(self.cdf_like_ndarray)
             self.pmf_like_ndarray = np.stack((pmf, self.cdf_like_ndarray[1:, 1]), axis=1)
 
+    @classmethod
+    def init_from_samples_by_ecdf(cls, samples: ndarray):
+        assert samples.ndim == 1
+        ecdf_obj = ECDF(samples)
+        x = np.linspace(np.min(samples.flatten()), np.max(samples.flatten()), 10000)
+        y = ecdf_obj(x)
+        obj = cls(cdf_like_ndarray=np.stack([y, x], axis=1))
+        return obj
+
     @property
     def mean_(self):
         return float(np.nansum(self.pmf_like_ndarray[:, 0] * self.pmf_like_ndarray[:, 1]))
@@ -284,6 +293,9 @@ class UnivariatePDFOrCDFLike(UnivariateProbabilisticModel):
         for i in cdf_value:
             inverse_cdf.append(self.cdf_like_ndarray[np.argmin(np.abs(self.cdf_like_ndarray[:, 0] - i)), 1])
         return np.array(inverse_cdf)
+
+    def inverse_cdf_estimate(self, cdf_value: Union[float, ndarray, list]) -> ndarray:
+        return self.find_nearest_inverse_cdf(cdf_value)
 
     @staticmethod
     def __cal_bin_width(pdf_or_cdf_like_ndarray: ndarray):

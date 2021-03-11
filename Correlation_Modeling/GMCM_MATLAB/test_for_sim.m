@@ -5,9 +5,9 @@ clc;
 rng('shuffle') %Seeds the random number generator based on the current time
 
 %% del
-load('GMCM_(1, 4).mat')
+load('GMCM_(1, 2).mat')
 
-del_idx = [4];
+del_idx = [1, 5];
 gmcObject_bestfit_params.mu(del_idx, :)=[];
 gmcObject_bestfit_params.sigma(:, :, del_idx)=[];
 gmcObject_bestfit_params.alpha(del_idx)=[];

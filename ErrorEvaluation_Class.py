@@ -5,11 +5,20 @@ from typing import Callable
 
 
 class ErrorEvaluation:
-    def __init__(self, *, target: Sequence, model_output: Sequence, **kwargs):
+    def __init__(self, *,
+                 target: Union[Sequence, ndarray],
+                 model_output: Union[Sequence, ndarray],
+                 reduce_method: str = 'mean', **kwargs):
         assert target.__len__() == model_output.__len__()
+        assert reduce_method in {'mean', 'median', 'none'}
+
+        if isinstance(self, ProbabilisticError):
+            assert hasattr(model_output[0], 'inverse_cdf_estimate')
+            assert hasattr(model_output[0], 'cdf_estimate')
 
         self.target = target
         self.model_output = model_output
+        self.reduce_method = reduce_method
 
 
 class DeterministicError(ErrorEvaluation):
@@ -33,20 +42,37 @@ class DeterministicError(ErrorEvaluation):
         return float(error)
 
     def cal_mean_absolute_error(self) -> float:
-        error = np.nanmean(np.abs(self.target - self.model_output))
+        error = np.abs(self.target - self.model_output)
+        if self.reduce_method == 'none':
+            return error
+
+        if self.reduce_method == 'mean':
+            error = np.nanmean(error)
+        else:
+            error = np.nanmedian(error)
         return float(error)
 
     def cal_weighted_mean_absolute_error(self) -> float:
         pass
 
     def cal_root_mean_square_error(self) -> float:
-        error = np.sqrt(np.nanmean((self.target - self.model_output) ** 2))
+        error = np.abs(self.target - self.model_output)
+        if self.reduce_method == 'none':
+            return error
+
+        if self.reduce_method == 'mean':
+            error = np.sqrt(np.nanmean(error ** 2))
+        else:
+            error = np.sqrt(np.nanmedian(error ** 2))
         return float(error)
 
     def cal_weighted_root_mean_square_error(self) -> float:
         pass
 
     def cal_mean_absolute_percentage_error(self) -> float:
+        if self.reduce_method != 'mean':
+            raise NotImplementedError
+
         return float(np.mean(np.abs((self.target - self.model_output) / self.target))) * 100
 
 
@@ -56,7 +82,7 @@ class EnergyBasedError(ErrorEvaluation):
     def __init__(self, *, target: ndarray, model_output: ndarray, time_step: float):
         """
 
-        :param time_step指相邻记录的时间间隔，单位是小时
+        :param the unit of time_step is HOUR
         """
         super().__init__(target=target, model_output=model_output)
         self.time_step = time_step
@@ -99,14 +125,11 @@ class EnergyBasedError(ErrorEvaluation):
 
 
 class ProbabilisticError(ErrorEvaluation):
-    monte_carlo_sample_size: int = 100_000
+    monte_carlo_sample_size: int = 300_000
     np.random.seed(0)
 
     def cal_continuous_ranked_probability_score(self, integral_boundary: Sequence[Union[int, float]]) -> ndarray:
         # ref: https://www.lokad.com/continuous-ranked-probability-score#Numerical_evaluation_4
-        # The elements of model_output should be Callable instance, which is the predicted CDF (given x, should
-        # return its corresponding CDF value)
-        assert isinstance(self.model_output[0], Callable)
 
         def cal_crps_for_single_sample(actual_val, predicted_cdf):
             nonlocal integral_boundary
@@ -122,24 +145,23 @@ class ProbabilisticError(ErrorEvaluation):
         crps_ans = np.full(self.target.__len__(), np.nan)
         for i in range(len(crps_ans)):
             if self.model_output[i] is not None:
-                now_crps = cal_crps_for_single_sample(self.target[i], self.model_output[i])
+                now_crps = cal_crps_for_single_sample(self.target[i], self.model_output[i].cdf_estimate)
                 crps_ans[i] = now_crps
 
-        return crps_ans
+        if self.reduce_method == 'mean':
+            return np.nanmean(crps_ans)
+        elif self.reduce_method == 'median':
+            return np.nanmedian(crps_ans)
+        else:
+            return crps_ans
 
-    def cal_pinball_loss(self, quantiles_to_assess: ndarray = None) -> ndarray:
+    def cal_pinball_loss(self, quantiles: ndarray = np.arange(0.001, 1., 0.001)) -> ndarray:
         # ref: https://www.lokad.com/pinball-loss-function-definition
-        quantiles = quantiles_to_assess or np.arange(0.001, 1., 0.001)
-        # The elements of model_output should be Callable instance, which is the predicted CDF (given x, should
-        # return its corresponding CDF value)
-        assert isinstance(self.model_output[0], Callable)
 
-        def cal_pinball_loss_for_single_sample(actual_val, predicted_cdf):
-            nonlocal quantiles
-
+        def cal_pinball_loss_for_single_sample(actual_val, predicted_i_cdf):
             one_ans = np.full(quantiles.__len__(), np.nan)
 
-            forecasted = predicted_cdf(quantiles)
+            forecasted = predicted_i_cdf(quantiles)
 
             mask_act_gte = actual_val >= forecasted
             one_ans[mask_act_gte] = (actual_val - forecasted[mask_act_gte]) * quantiles[mask_act_gte]
@@ -150,16 +172,19 @@ class ProbabilisticError(ErrorEvaluation):
         pinball_loss_ans = np.full(self.target.__len__(), np.nan)
         for i in range(len(pinball_loss_ans)):
             if self.model_output[i] is not None:
-                now_pinball_loss = cal_pinball_loss_for_single_sample(self.target[i], self.model_output[i])
+                now_pinball_loss = cal_pinball_loss_for_single_sample(self.target[i],
+                                                                      self.model_output[i].inverse_cdf_estimate)
                 pinball_loss_ans[i] = now_pinball_loss
 
-        return pinball_loss_ans
+        if self.reduce_method == 'mean':
+            return np.nanmean(pinball_loss_ans)
+        elif self.reduce_method == 'median':
+            return np.nanmedian(pinball_loss_ans)
+        else:
+            return pinball_loss_ans
 
     def cal_winker_score(self, alpha_val: Union[int, float]) -> ndarray:
         # ref: https://otexts.com/fpp3/distaccuracy.html
-        # The elements of model_output should be Callable instance, which is the predicted CDF (given x, should
-        # return its corresponding CDF value)
-        assert isinstance(self.model_output[0], Callable)
 
         def cal_winker_score_for_single_sample(actual_val, predicted_cdf):
             nonlocal alpha_val
@@ -177,10 +202,15 @@ class ProbabilisticError(ErrorEvaluation):
         winker_score_ans = np.full(self.target.__len__(), np.nan)
         for i in range(len(winker_score_ans)):
             if self.model_output[i] is not None:
-                now_winker_score = cal_winker_score_for_single_sample(self.target[i], self.model_output[i])
+                now_winker_score = cal_winker_score_for_single_sample(self.target[i], self.model_output[i].cdf_estimate)
                 winker_score_ans[i] = now_winker_score
 
-        return winker_score_ans
+        if self.reduce_method == 'mean':
+            return np.nanmean(winker_score_ans)
+        elif self.reduce_method == 'median':
+            return np.nanmedian(winker_score_ans)
+        else:
+            return winker_score_ans
 
 
 class ProbabilisticErrorIETPaperMethod(ProbabilisticError):

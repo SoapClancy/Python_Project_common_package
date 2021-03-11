@@ -47,6 +47,10 @@ class DeepLearningDataSet:
         self.predictor_cols, self.dependant_cols = self._infer_predictor_and_dependant_cols(predictor_cols,
                                                                                             dependant_cols)
 
+        if 'test' in name:
+            assert try_to_find_file(transformation_args_folder_path /
+                                    (self.name.replace("test", "training") + '_transformation_args.pkl'))
+
         self._transformation_args_file_path = (transformation_args_folder_path /
                                                (self.name.replace("test", "training") + '_transformation_args.pkl'))
 

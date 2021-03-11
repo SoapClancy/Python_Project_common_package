@@ -616,7 +616,8 @@ class VineGMCMCopula(VineCopula):
         return tuple(
             [gmcm_model_folder_for_construction_path_ + '/GMCM_' + str(x) + '.mat' for x in self.construction])
 
-    def fit(self, only_at_edge_idx: int = None, gmcm_fitting_attempt: int = 1):
+    def fit(self, only_at_edge_idx: int = None, gmcm_fitting_attempt: int = 1, *,
+            gmcm_fitting_k: int = 8):
         # fit模型
         initialised_pair_copula_of_each_edge = []
         for edge_idx, this_edge_gmcm in enumerate(self.gmcm_model_files_for_construction):
@@ -648,7 +649,7 @@ class VineGMCMCopula(VineCopula):
                 initialised_pair_copula_of_each_edge.append(
                     GMCM(gmcm_model_file_=this_edge_gmcm,
                          ndarray_data_in_uniform=self.all_vars_valid_data(np.stack((input_left, input_right), axis=1)),
-                         gmcm_fitting_k=8,
+                         gmcm_fitting_k=gmcm_fitting_k,
                          gmcm_max_fitting_iteration=50_000,
                          gmcm_fitting_attempt=gmcm_fitting_attempt,
                          debug=True,
