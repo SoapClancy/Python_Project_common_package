@@ -258,7 +258,7 @@ class UnivariatePDFOrCDFLike(UnivariateProbabilisticModel):
     def init_from_samples_by_ecdf(cls, samples: ndarray):
         assert samples.ndim == 1
         ecdf_obj = ECDF(samples)
-        x = np.linspace(np.min(samples.flatten()), np.max(samples.flatten()), 10000)
+        x = np.linspace(np.min(samples), np.max(samples), 10000)
         y = ecdf_obj(x)
         obj = cls(cdf_like_ndarray=np.stack([y, x], axis=1))
         return obj
@@ -266,6 +266,9 @@ class UnivariatePDFOrCDFLike(UnivariateProbabilisticModel):
     @property
     def mean_(self):
         return float(np.nansum(self.pmf_like_ndarray[:, 0] * self.pmf_like_ndarray[:, 1]))
+
+    def cal_median_val(self):
+        return self.find_nearest_inverse_cdf(0.5)[0]
 
     def sample(self, number_of_samples: int) -> ndarray:
         rnd = np.random.uniform(0., 1., number_of_samples)
@@ -391,11 +394,17 @@ class DeterministicUnivariateProbabilisticModel(UnivariateProbabilisticModel):
         cdf_estimate_results[mask_lower_range] = 0
         cdf_estimate_results[mask_in_range] = interp1d(
             np.array([self.theoretic_min_value, self.theoretic_max_value]),
-            np.array([0, 1]))(x[mask_in_range]).flatten()
+            np.array([0, 1]),
+            bounds_error=False,
+            fill_value=(0., 1.)
+        )(x[mask_in_range]).flatten()
         return cdf_estimate_results
 
     @property
     def mean_(self):
+        return self.value
+
+    def cal_median_val(self):
         return self.value
 
     def cal_inverse_cdf_as_look_up_table(self, accuracy: float = 0.01) -> ndarray:

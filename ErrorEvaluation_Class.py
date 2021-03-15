@@ -1,7 +1,7 @@
 from Data_Preprocessing import float_eps
 import warnings
 from Ploting.fast_plot_Func import *
-from typing import Callable
+from typing import Callable, Iterable
 
 
 class ErrorEvaluation:
@@ -89,7 +89,7 @@ class EnergyBasedError(ErrorEvaluation):
         if (sum(np.isnan(target)) > 0) or (sum(np.isnan(model_output)) > 0):
             warnings.warn("At least one 'target' or 'model_output' is nan")
 
-    def do_calculation(self):
+    def do_calculation(self, drop_keys: Iterable = None):
         over_estimate_mask = self.model_output > self.target
 
         over_estimate = np.nansum(
@@ -107,21 +107,25 @@ class EnergyBasedError(ErrorEvaluation):
         under_estimate_in_pct = under_estimate / target_total_when_under * 100
         model_output_total_dividing_target_total = over_minus_under_estimate / target_total * 100
         model_output_total_plus_dividing_target_total = over_plus_under_estimate / target_total * 100
-        return {'over_estimate': over_estimate,
-                'over_estimate_in_pct': over_estimate_in_pct,
-                'target_total_when_over': target_total_when_over,
-                #
-                'under_estimate': under_estimate,
-                'under_estimate_in_pct': under_estimate_in_pct,
-                'target_total_when_under': target_total_when_under,
-                #
-                'model_output_total': over_minus_under_estimate,
-                'model_output_total_dividing_target_total': model_output_total_dividing_target_total,
-                'target_total': target_total,
-                #
-                'model_output_total_plus': over_plus_under_estimate,
-                'model_output_total_plus_dividing_target_total': model_output_total_plus_dividing_target_total
-                }
+        ans = {'over_estimate': over_estimate,
+               'over_estimate_in_pct': over_estimate_in_pct,
+               'target_total_when_over': target_total_when_over,
+               #
+               'under_estimate': under_estimate,
+               'under_estimate_in_pct': under_estimate_in_pct,
+               'target_total_when_under': target_total_when_under,
+               #
+               'model_output_total': over_minus_under_estimate,
+               'model_output_total_dividing_target_total': model_output_total_dividing_target_total,
+               'target_total': target_total,
+               #
+               'model_output_total_plus': over_plus_under_estimate,
+               'model_output_total_plus_dividing_target_total': model_output_total_plus_dividing_target_total
+               }
+        if drop_keys is not None:
+            for ele in drop_keys:
+                ans.pop(ele)
+        return ans
 
 
 class ProbabilisticError(ErrorEvaluation):
@@ -137,9 +141,11 @@ class ProbabilisticError(ErrorEvaluation):
             part_1 = np.mean(predicted_cdf(np.random.uniform(integral_boundary[0],
                                                              actual_val,
                                                              self.monte_carlo_sample_size)) ** 2)
+            part_1 = part_1 * (actual_val - integral_boundary[0])
             part_2 = np.mean((predicted_cdf(np.random.uniform(actual_val,
                                                               integral_boundary[1],
                                                               self.monte_carlo_sample_size)) - 1) ** 2)
+            part_2 = part_2 * (integral_boundary[1] - actual_val)
             return part_1 + part_2
 
         crps_ans = np.full(self.target.__len__(), np.nan)
