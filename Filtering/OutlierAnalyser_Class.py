@@ -99,7 +99,7 @@ class DataCategoryNameMapper(pd.DataFrame, metaclass=DataCategoryNameMapperMeta)
 class DataCategoryData:
     __slots__ = ('abbreviation', 'index', 'name_mapper')
 
-    def __init__(self, abbreviation: Union[StrOneDimensionNdarray, ndarray] = None, *,
+    def __init__(self, abbreviation: Union[StrOneDimensionNdarray, ndarray, Sequence] = None, *,
                  index: Union[ndarray, pd.Index] = None,
                  name_mapper: DataCategoryNameMapper = None):
         """

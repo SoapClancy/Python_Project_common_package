@@ -22,7 +22,7 @@ from pathlib import Path
 
 THREE_DIM_CVINE_CONSTRUCTION = ((1, 2), (1, 3), (2, 3, 1))
 FOUR_DIM_CVINE_CONSTRUCTION = ((1, 2), (1, 3), (1, 4), (2, 3, 1), (2, 4, 1), (3, 4, 1, 2))
-eng = matlab.engine.start_matlab()
+# eng = matlab.engine.start_matlab()
 
 
 class Copula(metaclass=ABCMeta):
