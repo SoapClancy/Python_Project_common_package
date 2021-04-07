@@ -211,10 +211,15 @@ class DeepLearningDataSet:
                         data_ndarray[j, :, :][:, [idx for idx, x in enumerate(names) if x == this_name]]
                     ).astype(int)
             else:
-                poxy_ndarray = np.full((data_ndarray.shape[1], scaler_obj.n_features_in_), np.nan)
+                poxy_ndarrays = []
                 for j in range(data_ndarray.shape[0]):
+                    poxy_ndarray = np.full((data_ndarray.shape[1], scaler_obj.n_features_in_), np.nan)
                     poxy_ndarray[:, index] = data_ndarray[j, :, i]
-                    data_ndarray_inverse_transformed[j, :, i] = scaler_obj.inverse_transform(poxy_ndarray)[:, index]
+                    poxy_ndarrays.append(poxy_ndarray)
+                poxy_ndarrays = np.array(poxy_ndarrays)
+                old_shape = poxy_ndarrays.shape
+                temp = scaler_obj.inverse_transform(np.reshape(poxy_ndarrays, (-1, old_shape[-1])))
+                data_ndarray_inverse_transformed[:, :, i] = np.reshape(temp, old_shape)[:, :, index]
 
         return data_ndarray_inverse_transformed
 
