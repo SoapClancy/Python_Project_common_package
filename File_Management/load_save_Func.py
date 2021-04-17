@@ -51,11 +51,11 @@ def save_pkl_file(file_path: Path, obj):
     file_path = str(file_path)
     try:
         with open(file_path, 'wb') as f:
-            pickle.dump(obj, f)
+            pickle.dump(obj, f, protocol=4)
     except FileNotFoundError:
         file_path = re.sub('/', '//', file_path)
         with open(file_path, 'wb') as f:
-            pickle.dump(obj, f)
+            pickle.dump(obj, f, protocol=4)
 
 
 def load_pkl_file(file_path: Path):
