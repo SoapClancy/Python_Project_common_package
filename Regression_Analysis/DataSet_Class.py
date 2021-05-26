@@ -1,9 +1,9 @@
-from __future__ import annotations
+# from __future__ import annotations
+
 from typing import Tuple, Sequence, Generator, Callable, List
 import pandas as pd
 from Ploting.fast_plot_Func import *
 from pathlib import Path
-import tensorflow as tf
 from File_Management.path_and_file_management_Func import *
 from File_Management.load_save_Func import *
 from functools import reduce
@@ -12,6 +12,11 @@ from Data_Preprocessing.TruncatedOrCircularToLinear_Class import CircularToLinea
 from itertools import chain
 import warnings
 import copy
+
+try:
+    import tensorflow as tf
+except ModuleNotFoundError:
+    pass
 
 
 class DeepLearningDataSet:
@@ -248,7 +253,7 @@ class DeepLearningDataSet:
                                                       freq=f"{min_diff}N"))
         return returned
 
-    def __getitem__(self, date_time_range: Tuple[datetime.datetime, datetime.datetime]) -> DeepLearningDataSet:
+    def __getitem__(self, date_time_range: Tuple[datetime.datetime, datetime.datetime]):
         mask = np.bitwise_and(self.data.index >= date_time_range[0], self.data.index < date_time_range[1])
         copied = copy.deepcopy(self)
         copied.data = copied.data[mask]
@@ -263,8 +268,9 @@ class DeepLearningDataSet:
             window_shift: datetime.timedelta,
             batch_drop_remainder=False,
             batch_size: int,
+    ):
 
-    ) -> Tuple[tf.data.Dataset, Callable, pd.DataFrame, pd.DataFrame]:
+        # return type: Tuple[tf.data.Dataset, Callable, pd.DataFrame, pd.DataFrame]
         assert np.unique(np.diff(self.transformed_data.index.values)).size == 1
         # Meta info for sliding window
         freq = (self.transformed_data.index.values[1] - self.transformed_data.index.values[0]) / np.timedelta64(1, 's')

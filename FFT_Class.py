@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from numpy import ndarray, complex
@@ -183,7 +184,8 @@ class FFTProcessor:
              considered_frequency_units: Union[str, Tuple[str, ...]] = None, *,
              overridden_plot_x_lim: Tuple[Union[int, float, None], Union[int, float, None]] = None,
              save_as_docx_path: Path = None,
-             plot_log: bool = False) -> tuple:
+             plot_log: bool = False,
+             y_label_unit: str = '') -> tuple:
         """
         画频谱图和相位图
         :return: 最后一组fft的frequency和phase的图的buf或者gca
@@ -220,7 +222,7 @@ class FFTProcessor:
                          x_lim=x_lim,
                          infer_y_lim_according_to_x_lim=True,
                          x_label=f'Frequency ({_this_considered_frequency_unit})',
-                         y_label=f"{'Log ' if plot_log else ''}Magnitude",
+                         y_label=f"{'Log ' if plot_log else ''}Magnitude [{y_label_unit}]",
                          save_to_buffer=False)
             if save_to_buffer:
                 if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (magnitude)'][0]:
@@ -235,7 +237,7 @@ class FFTProcessor:
                          ax=None,
                          x_lim=x_lim,
                          x_label=f'Frequency ({_this_considered_frequency_unit})',
-                         y_label=f"Phase angle ({'rad' if not USE_DEGREE_FOR_PLOT else 'degree'})",
+                         y_label=f"Phase Angle ({'rad' if not USE_DEGREE_FOR_PLOT else 'Degree'})",
                          save_to_buffer=save_to_buffer)
             if save_to_buffer:
                 if not save_as_docx_buff[self.name + ' ' + _this_considered_frequency_unit + ' (phase angle)'][0]:
@@ -393,7 +395,8 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
         if isinstance(x_value, ndarray):
             return x_value
         elif isinstance(x_value, pd.DatetimeIndex):
-            seconds_ndarray = np.array(list(map(lambda x: (x - x_value[0]).seconds, x_value)))
+            seconds_ndarray = (x_value - x_value[0]).total_seconds().values.astype(int)
+            # seconds_ndarray = np.array(list(map(lambda x: (x - x_value[0]).seconds, x_value)))
             return seconds_ndarray
         else:
             raise TypeError("Unsupported x_value type, should be pd.DatetimeIndex or ndarray")
@@ -427,21 +430,63 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
         else:
             return results, raw_results.T
 
-    def plot(self, considered_frequency_unit, *, save_to_buffer: bool = False):
+    def plot(self, considered_frequency_unit, use_log: bool = False, *, save_to_buffer: bool = False, y_label_unit='',
+             extra_zoom_in_x_idx: Sequence = None, save_freq_full_path: Path = None, save_mag_full_path: Path = None,
+             extra_zoom_in_x_ticks: Sequence = None):
         frequency = self.frequency * SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
             considered_frequency_unit)[-1]
-        magnitude = np.log(self.obtain_amplitude_and_phase_angle()['amplitude'])
+        magnitude = self.obtain_amplitude_and_phase_angle()['amplitude']
+        magnitude = np.log(magnitude) if use_log else magnitude
         phase_angle = self.obtain_amplitude_and_phase_angle()['phase_angle']
-        ax1 = stem(x=frequency,
-                   y=magnitude,
-                   x_label=f'Frequency [{considered_frequency_unit}]',
-                   y_label=f"Log Magnitude",
-                   save_to_buffer=save_to_buffer)
+        if extra_zoom_in_x_idx is None:
+            ax1 = stem(x=frequency,
+                       y=magnitude,
+                       x_label=f'Frequency [{considered_frequency_unit}]',
+                       y_label=f"Log Magnitude" if use_log else f"Magnitude [{y_label_unit}]",
+                       color='royalblue',
+                       save_to_buffer=save_to_buffer)
+            # ax1.containers[0].stemlines.set_linewidth(0.5)
+            # plt.show()
+        else:
+            fig, ax_mine_new = plt.subplots(figsize=(5, 5 * 0.618), constrained_layout=True)
+            ax_mine_new = stem(x=frequency,
+                               y=magnitude,
+                               x_label=f'Frequency [{considered_frequency_unit}]',
+                               y_label=f"Log Magnitude" if use_log else f"Magnitude [{y_label_unit}]",
+                               color='royalblue', ax=ax_mine_new)
+            ax_mine_new = adjust_lim_label_ticks(ax_mine_new)
+            left, bottom, width, height = [0.23, 0.54, 0.335, 0.395]
+            ax_in = fig.add_axes([left, bottom, width, height])
+            ax_in = stem(x=frequency[extra_zoom_in_x_idx],
+                         y=magnitude[extra_zoom_in_x_idx], color='royalblue', ax=ax_in)
+            # ax_in.set_xlim(2.9, 8.1)
+            # ax_in.set_ylim(-0.005, 0.47)
+            ax_in.set_xticks(frequency[extra_zoom_in_x_idx])
+            ax_in.set_xticklabels(extra_zoom_in_x_ticks, fontsize=8, rotation=45,
+                                  verticalalignment='top', position=(0.1, 0.1))
+            # ax_in.set_yticklabels('')
+            ax_in.set_xlabel('')
+            ax_in.set_ylabel('')
+            ax_in.grid(False)
+            ax_mine_new.indicate_inset_zoom(ax_in)
+            ax1 = ax_mine_new
+
+        if save_freq_full_path is not None:
+            plt.savefig(save_freq_full_path, format='png', dpi=300)
+            plt.close()
+
         ax2 = stem(x=frequency,
                    y=phase_angle if not USE_DEGREE_FOR_PLOT else (phase_angle * 180 / float(np.pi)),
                    x_label=f'Frequency [{considered_frequency_unit}]',
-                   y_label=f"Phase angle [{'Rad' if not USE_DEGREE_FOR_PLOT else 'Degree'}]",
+                   y_label=f"Phase Angle [{'Rad' if not USE_DEGREE_FOR_PLOT else 'Degree'}]",
+                   color='royalblue',
                    save_to_buffer=save_to_buffer)
+        # ax2.containers[0].stemlines.set_linewidth(0.5)
+        # plt.show()
+        if save_mag_full_path is not None:
+            plt.savefig(save_mag_full_path, format='png', dpi=300)
+            plt.close()
+
         return ax1, ax2
 
     def obtain_amplitude_and_phase_angle(self) -> dict:
@@ -554,8 +599,9 @@ class AdvancedFFTProcessor:
         生成SCFormFourierSeriesProcessor对象，默认coefficient全是1，调用__call__方法生成对应矩阵
         :return ：偶数列代表cos, 奇数列代表sin
         """
-        if not np.isclose(np.min(self.frequency), 0, rtol=1.e-16, atol=1.e-16):
-            warnings.warn("要用到Advanced FFT fitting，那么必须要包含base分量，已经自动添加", UserWarning)
+        # Disable the warnings for now to increase performance
+        # if not np.isclose(np.min(self.frequency), 0, rtol=1.e-16, atol=1.e-16):
+        #     warnings.warn("要用到Advanced FFT fitting，那么必须要包含base分量，已经自动添加", UserWarning)
         self.frequency = np.concatenate(([0], self.frequency))
         sc_form_fourier_series_processor = SCFormFourierSeriesProcessor(
             frequency=self.frequency

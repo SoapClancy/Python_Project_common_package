@@ -44,7 +44,8 @@ class FFTCorrelation(metaclass=FFTCorrelationMeta):
 
 class BivariateFFTCorrelation(FFTCorrelation):
     __slots__ = ('main_ifft',
-                 'vice_ifft')
+                 'vice_ifft',
+                 'original_corr')
 
     def __init__(self, *,
                  _time_series: TimeSeries = None,
@@ -99,6 +100,7 @@ class BivariateFFTCorrelation(FFTCorrelation):
             main_considered_peaks_index=main_considered_peaks_index,
             vice_considered_peaks_index=vice_considered_peaks_index
         )
+        self.original_corr = BivariateCorrelationAnalyser(*self.time_series.values.T)('Spearman')
 
     def _do_fft(self) -> Tuple[FFTProcessor, FFTProcessor]:
         """
@@ -252,7 +254,7 @@ class BivariateFFTCorrelation(FFTCorrelation):
         # 优先用lasso去fit (#强制利用use_lasso_fft_to_re_estimate)
         else:
             # 设置lasso默认参数
-            do_lasso_fitting_args = do_lasso_fitting_args or {'alpha': 0.0001,
+            do_lasso_fitting_args = do_lasso_fitting_args or {'alpha': 1e-8,
                                                               'max_iter': 1_000_000,
                                                               'tol': 1e-8,
                                                               'random_state': 0}

@@ -117,7 +117,7 @@ class TimeSeries(pd.DataFrame):
         self._check_ordinal_time_delta()
 
     @property
-    def view_as_dataframe(self):
+    def pd_view(self):
         """
         配合pycharm的scientific mode显示
         """
@@ -153,7 +153,7 @@ class TimeSeries(pd.DataFrame):
         return number
 
     def to_windowed_time_series(self, *, window_length: datetime.timedelta, window: str = None):
-        return WindowedTimeSeries(self, window_length=window_length, window=window)
+        return WindowedTimeSeries(self, window_size=window_length, window=window)
 
     def reconstruct_using_ift(self, *,
                               n_fft: int = None,
@@ -200,45 +200,49 @@ class TimeSeries(pd.DataFrame):
 
 
 class WindowedTimeSeries(TimeSeries):
-    __slots__ = ('window_interval', 'window', 'window_length', '__iter_count')
-    _metadata = ["window_interval", "window", "window_length", "__iter_count"]
+    __slots__ = ('window_interval', 'window', 'window_size', 'window_shift', '__iter_count')
+    _metadata = ["window_interval", "window", "window_size", 'window_shift', "__iter_count"]
 
-    def __init__(self, *args, window_length: datetime.timedelta, window: str = None,
+    def __init__(self, *args,
+                 window_size: datetime.timedelta,
+                 window_shift: datetime.timedelta = None,
+                 window: str = None,
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.window = window
-        self.window_length = window_length
+        self.window_size = window_size
+        self.window_shift = window_shift or window_size
         self.window_interval = self._cal_window_interval()
 
     def __repr__(self):
         return super().__repr__() + f', window = {self.window}, ' \
-                                    f'window_length = {self.window_length}, ' \
+                                    f'window_length = {self.window_size}, ' \
                                     f'window_number = {self.__len__()}'
 
     def __len__(self):
-        return (self.last_valid_index() - self.first_valid_index()) / self.window_length
+        return (self.last_valid_index() - self.first_valid_index()) / self.window_size
 
     def _cal_window_interval(self) -> tuple:
         """
         计算window两个边界对应的索引
         """
         self_index_as_asi8 = self.index.asi8
-        window_interval = [self.index[0]]
+        window_interval = [[self.index[0], self.index[0] + self.window_size]]
         while True:
-            window_interval_next = window_interval[-1] + self.window_length
+            window_interval_next = window_interval[-1][0] + self.window_shift
             if window_interval_next > self.index[-1]:
-                window_interval.append(self.index[-1])
+                window_interval.append([self.index[-1], self.index[-1] + self.window_size])
                 break
             else:
                 # 找到self.index中距离window_interval_next中最近的一个，防止__getitem__找不到对应的index
                 if window_interval_next not in self.index:
                     window_interval_next = self.index[np.argmin(np.abs(self_index_as_asi8 -
                                                                        window_interval_next.value))]
-                window_interval.append(window_interval_next)
+                window_interval.append([window_interval_next, window_interval_next + + self.window_size])
         return tuple(window_interval)
 
     def __getitem__(self, index: int) -> TimeSeries:
-        windowed_data = self.loc[self.window_interval[index]:self.window_interval[index + 1]].iloc[:-1]
+        windowed_data = self.loc[self.window_interval[index][0]:self.window_interval[index][1]].iloc[:-1]
         # 增加必要的窗函数
         if self.window is not None:
             scipy_window = get_window(self.window, windowed_data.__len__()).reshape(-1, 1)
