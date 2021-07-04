@@ -56,10 +56,13 @@ class BayesianConv1DBiLSTM(metaclass=ABCMeta):
         }
 
         # %% Bayesian MaxPooling hyper parameters and their default values
-        self.maxpool1d_hypers = {
-            "pool_size": kwargs.get("maxpool1d_hypers_pool_size", 5),
-            "padding": kwargs.get("maxpool1d_hypers_padding", "valid")
-        }
+        if "maxpool1d_hypers_pool_size" in kwargs or "maxpool1d_hypers_padding" in kwargs:
+            self.maxpool1d_hypers = {
+                "pool_size": kwargs.get("maxpool1d_hypers_pool_size", 5),
+                "padding": kwargs.get("maxpool1d_hypers_padding", "valid")
+            }
+        else:
+            self.maxpool1d_hypers = None
 
         # %% Bayesian BiLSTM hyper parameters and their default values
         self.bilstm_hypers = {
@@ -77,7 +80,8 @@ class BayesianConv1DBiLSTM(metaclass=ABCMeta):
     def build(self):
         layers = [self.get_convolution1d_reparameterization_layer() for _ in range(self.conv1d_layer_count)]
         # layers = [tf.keras.layers.LocallyConnected1D(filters=8, kernel_size=5, input_shape=self.input_shape)]
-        layers.append(tf.keras.layers.MaxPooling1D(**self.maxpool1d_hypers)),
+        if self.maxpool1d_hypers is not None:
+            layers.append(tf.keras.layers.MaxPooling1D(**self.maxpool1d_hypers)),
         if self.bilstm_layer_count == 0:
             layers.append(tf.keras.layers.Flatten())
         else:

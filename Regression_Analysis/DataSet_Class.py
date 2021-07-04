@@ -25,18 +25,18 @@ class DeepLearningDataSet:
 
     def __init__(self, original_data_set: pd.DataFrame, *,
                  name: str,
-                 cos_sin_transformed_col: Tuple[str, ...] = (),
-                 min_max_transformed_col: Tuple[str, ...] = (),
-                 standard_transformed_col: Tuple[str, ...] = (),
-                 quantile_transformed_col: Tuple[str, ...] = (),
-                 one_hot_transformed_col: Tuple[str, ...] = (),
-                 non_transformed_col: Tuple[str, ...] = (),
-                 predictor_cols: Tuple[str, ...] = (),
-                 dependant_cols: Tuple[str, ...] = (),
+                 cos_sin_transformed_col: Sequence = (),
+                 min_max_transformed_col: Sequence = (),
+                 standard_transformed_col: Sequence = (),
+                 quantile_transformed_col: Sequence = (),
+                 one_hot_transformed_col: Sequence = (),
+                 non_transformed_col: Sequence = (),
+                 predictor_cols: Sequence = (),
+                 dependant_cols: Sequence = (),
                  transformation_args_folder_path: Path,
-                 stacked_shift_col: Tuple[str, ...] = (),
-                 stacked_shift_size: Tuple[datetime.timedelta, ...] = (),
-                 how_many_stacked: Tuple[int, ...] = ()):
+                 stacked_shift_col: Sequence = (),
+                 stacked_shift_size: Sequence[datetime.timedelta] = (),
+                 how_many_stacked: Sequence[int] = ()):
         assert ('training' in name) or ('test' in name)
 
         self.data = original_data_set  # type: pd.DataFrame
@@ -244,7 +244,7 @@ class DeepLearningDataSet:
                     self.transformed_data = pd.merge(self.transformed_data, shift, how='left',
                                                      left_index=True, right_index=True)
             returned = self.transformed_data
-        if np.unique(np.diff(returned.index.values)) != 1:
+        if np.unique(np.diff(returned.index.values)).__len__() != 1:
             min_diff = np.min(np.unique(np.diff(self.transformed_data.index.values)))
             msg = f"np.unique(np.diff(returned.index.values))!=1, reindex to {min_diff / np.timedelta64(1, 's')} s"
             warnings.warn(msg)

@@ -432,7 +432,7 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
 
     def plot(self, considered_frequency_unit, use_log: bool = False, *, save_to_buffer: bool = False, y_label_unit='',
              extra_zoom_in_x_idx: Sequence = None, save_freq_full_path: Path = None, save_mag_full_path: Path = None,
-             extra_zoom_in_x_ticks: Sequence = None):
+             extra_zoom_in_x_ticks: Sequence = None, figure_size=(5, 5 * 0.618), **kwargs):
         frequency = self.frequency * SupportedTransformedPeriod.get_by_convenient_frequency_unit_name(
             considered_frequency_unit)[-1]
         magnitude = self.obtain_amplitude_and_phase_angle()['amplitude']
@@ -443,48 +443,53 @@ class FourierSeriesProcessor(metaclass=FourierSeriesProcessorMeta):
                        y=magnitude,
                        x_label=f'Frequency [{considered_frequency_unit}]',
                        y_label=f"Log Magnitude" if use_log else f"Magnitude [{y_label_unit}]",
-                       color='royalblue',
-                       save_to_buffer=save_to_buffer)
+                       color='black',
+                       save_to_buffer=save_to_buffer, figure_size=figure_size, **kwargs)
             # ax1.containers[0].stemlines.set_linewidth(0.5)
             # plt.show()
         else:
-            fig, ax_mine_new = plt.subplots(figsize=(5, 5 * 0.618), constrained_layout=True)
+            fig, ax_mine_new = plt.subplots(figsize=figure_size, constrained_layout=True)
             ax_mine_new = stem(x=frequency,
                                y=magnitude,
-                               x_label=f'Frequency [{considered_frequency_unit}]',
+                               x_label=f'Frequency [{considered_frequency_unit}]'
+                               if not kwargs.get('x_ticks') else 'Frequency Component',
                                y_label=f"Log Magnitude" if use_log else f"Magnitude [{y_label_unit}]",
-                               color='royalblue', ax=ax_mine_new)
+                               color='black', ax=ax_mine_new, **kwargs)
             ax_mine_new = adjust_lim_label_ticks(ax_mine_new)
-            left, bottom, width, height = [0.23, 0.54, 0.335, 0.395]
+            left, bottom, width, height = [0.23, 0.56, 0.319, 0.395]
             ax_in = fig.add_axes([left, bottom, width, height])
             ax_in = stem(x=frequency[extra_zoom_in_x_idx],
-                         y=magnitude[extra_zoom_in_x_idx], color='royalblue', ax=ax_in)
+                         y=magnitude[extra_zoom_in_x_idx], color='black', ax=ax_in)
             # ax_in.set_xlim(2.9, 8.1)
             # ax_in.set_ylim(-0.005, 0.47)
             ax_in.set_xticks(frequency[extra_zoom_in_x_idx])
-            ax_in.set_xticklabels(extra_zoom_in_x_ticks, fontsize=8, rotation=45,
+            ax_in.set_xticklabels(extra_zoom_in_x_ticks, fontsize=6, rotation=90,
                                   verticalalignment='top', position=(0.1, 0.1))
             # ax_in.set_yticklabels('')
             ax_in.set_xlabel('')
             ax_in.set_ylabel('')
+            ax_in.set_yticklabels(ax_in.get_yticklabels(), fontsize=8,
+                                  horizontalalignment='right', position=(0.1, 0.1))
             ax_in.grid(False)
             ax_mine_new.indicate_inset_zoom(ax_in)
             ax1 = ax_mine_new
 
         if save_freq_full_path is not None:
-            plt.savefig(save_freq_full_path, format='png', dpi=300)
+            plt.savefig(save_freq_full_path, format=save_freq_full_path.__str__().split('.')[-1], dpi=300)
             plt.close()
 
         ax2 = stem(x=frequency,
                    y=phase_angle if not USE_DEGREE_FOR_PLOT else (phase_angle * 180 / float(np.pi)),
-                   x_label=f'Frequency [{considered_frequency_unit}]',
-                   y_label=f"Phase Angle [{'Rad' if not USE_DEGREE_FOR_PLOT else 'Degree'}]",
-                   color='royalblue',
-                   save_to_buffer=save_to_buffer)
+                   x_label=f'Frequency [{considered_frequency_unit}]'
+                   if not kwargs.get('x_ticks') else 'Frequency Component',
+                   y_label=f"Phase Angle [{'Rad' if not USE_DEGREE_FOR_PLOT else 'Degrees'}]",
+                   color='black',
+                   save_to_buffer=save_to_buffer,
+                   figure_size=figure_size, **kwargs)
         # ax2.containers[0].stemlines.set_linewidth(0.5)
         # plt.show()
         if save_mag_full_path is not None:
-            plt.savefig(save_mag_full_path, format='png', dpi=300)
+            plt.savefig(save_mag_full_path, format=save_mag_full_path.__str__().split('.')[-1], dpi=300)
             plt.close()
 
         return ax1, ax2

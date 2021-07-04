@@ -10,7 +10,7 @@ import datetime
 from locale import setlocale, LC_ALL
 
 setlocale(LC_ALL, "en_US")
-sns.set()
+# sns.set()
 
 
 class BufferedFigureSaver(list):
@@ -41,6 +41,8 @@ def show_fig(func):
                 infer_y_lim_according_to_x_lim=False,
                 x_ticks: tuple = (), y_ticks: tuple = (),
                 x_ticks_rotation: Union[int, float] = 0,
+                x_fontsize=10,
+                x_ticks_fontsize=10,
                 save_file_: str = None,
                 save_format: str = 'png',
                 save_to_buffer: bool = False,
@@ -54,7 +56,7 @@ def show_fig(func):
             ax.legend(loc=legend_loc, ncol=legend_ncol, prop={'size': 10})
         plt.title(title)
         if isinstance(x_label, str):
-            plt.xlabel(x_label, fontsize=10)
+            plt.xlabel(x_label, fontsize=x_fontsize)
         if isinstance(y_label, str):
             plt.ylabel(y_label, fontsize=10)
         if isinstance(x_lim, tuple):
@@ -70,7 +72,7 @@ def show_fig(func):
                          np.max(y_in_x_lim) + y_resolution)
         if isinstance(y_lim, tuple):
             plt.ylim(*y_lim)
-        plt.xticks(*x_ticks, fontsize=10, rotation=x_ticks_rotation)
+        plt.xticks(*x_ticks, fontsize=x_ticks_fontsize, rotation=x_ticks_rotation)
         plt.yticks(*y_ticks, fontsize=10)
         plt.grid(True)
         # dates
